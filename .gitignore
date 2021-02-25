@@ -1,0 +1,17 @@
+build/
+__pycache__
+settings.json
+
+*.vcd
+*.vvp
+
+sim_build/
+results.xml
+
+analyzer.csv
+
+.vs/
+obj/
+bin/
+*csproj.user
+software/fw-updater/Resources/DiVA.dfu

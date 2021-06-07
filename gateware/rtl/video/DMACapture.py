@@ -143,7 +143,7 @@ class DMAVideoCapture(Module, AutoCSR):
         self.submodules += ResetInserter()(sc)
         
         # FIFO
-        fifo = AsyncFIFO([('data', 16)], 64)
+        fifo = AsyncFIFO([('data', 16)], 256)
         fifo = ClockDomainsRenamer({"write": "pix", "read": "sys"})(fifo)
         fifo = ResetInserter(["pix", "sys"])(fifo)
         self.submodules += fifo

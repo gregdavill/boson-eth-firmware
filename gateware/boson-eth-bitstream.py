@@ -185,7 +185,7 @@ class ethSoC(SoCCore):
                           csr_data_width=32,
                           ident="Boson Ethernet SoC", ident_version=True, wishbone_timeout_cycles=128,
                           integrated_rom_size=64*1024, 
-                          integrated_sram_size=32*1024)
+                          integrated_sram_size=16*1024)
 
         self.submodules.i2c = I2CMaster(platform.request("i2c"))
 
@@ -275,7 +275,7 @@ class ethSoC(SoCCore):
                 sc = StrideConverter([('data', len(dma1.source.data))], [('data', 32)], reverse=True)
                 self.submodules += sc
 
-                self.submodules.fifo0 = fifo = SyncFIFO([('data', 32)], 128)
+                self.submodules.fifo0 = fifo = SyncFIFO([('data', 32)], 512)
 
                 self.submodules.packet = p = Packetizer(ip_udp_description(32), [('data', 32), ('last_be', 4)], udp_header)       
 

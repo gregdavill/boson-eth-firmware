@@ -254,6 +254,7 @@ void boson_init(void){
         dispatcher(DVO_SETTYPE, (const uint8_t[]){UINT32_LE(0)}, 4); /* Type: COLOUR */
         dispatcher(DVO_APPLYCUSTOMSETTINGS, 0, 0);
         //dispatcher(COLORLUT_SETID, (const uint8_t[]){UINT32_LE(_settings.pallete)}, 4); /* Colour LUT: Ironbow */
+        msleep(10);
         dispatcher(COLORLUT_SETCONTROL, (const uint8_t[]){UINT32_LE(1)}, 4);
         dispatcher(GAO_SETAVERAGERSTATE, (const uint8_t[]){UINT32_LE(0)}, 4);
 

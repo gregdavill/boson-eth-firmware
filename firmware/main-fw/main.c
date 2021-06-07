@@ -40,14 +40,6 @@ void isr(void){
 }
 
 
-uint32_t buffers[] = {
-	0x00000000,
-	0x01000000,
-	0x02000000,
-};
-
-uint8_t buffer_owners[] = {0,0,0};
-
 static unsigned char mac_addr[6] = {0x10, 0xe2, 0xd5, 0x00, 0x00, 0x01};
 static unsigned char ip_addr[4] = {192,168,1,50};
 
@@ -106,46 +98,143 @@ int main(int i, char **c)
 	printf("--==========-- \e[1mBoson Init\e[0m ===========--\n");
  	boson_init();
 
+	uint32_t wait = 5000;
+
     while(1) {
 		ethernet_service();
-
-		/* Start a capture */
-		dma0_dma_enable_write(0);
-		dma0_dma_base_write(0);
-		dma0_dma_length_write(((512*640)*2));
-		dma0_dma_enable_write(1);
-		/* While capture is running */
-		while(1){
-			if(dma0_dma_done_read()){
-				break;
-			}
-		}
-
-		dma0_dma_enable_write(0);
-
-		uint32_t idx = 0;
-		while(idx <= 512){
-
-			busy_wait_us(10);
-
-			dma1_enable_write(0);
-
-			csr_idx_value_write(idx);
-			csr_idx_level_write(64);
-			dma1_base_write(0 + idx * 1280);
-			dma1_length_write((1280));
-			dma1_enable_write(1);
-
-			/* While capture is running */
-			while(1){
-				if(dma1_done_read()){
-					break;
-				}
-			}
-
-			idx += 1;
+	
+		if(wait > 0){
+			wait--;
+			msleep(1);
+		}else{
+			capture_service();
+			transmit_service();
 		}
 	}
 	
 	return 0;
+}
+
+
+enum {
+	BUFFER_CLAIMED = 1,
+	BUFFER_COMPLETE = 2,
+};
+
+uint32_t buffers[] = {
+	0x00000000,
+	0x02000000,
+	0x04000000,
+};
+
+uint8_t buffer_owners[] = {0,0,0};
+
+
+int32_t get_free_buffer(){
+	for(int i = 0; i < 3; i++){
+		if(!(buffer_owners[i] & BUFFER_CLAIMED)){
+			if(!(buffer_owners[i] & BUFFER_COMPLETE)){
+				return i;
+			}
+		}
+	}
+
+	for(int i = 0; i < 3; i++){
+		if(!(buffer_owners[i] & BUFFER_CLAIMED)){
+			return i;
+		}
+	}
+
+	return -1;
+}
+
+
+int32_t get_complete_buffer(){
+	for(int i = 0; i < 3; i++){
+		if((buffer_owners[i] & BUFFER_COMPLETE)){
+			return i;
+		}
+	}
+
+	return -1;
+}
+
+
+void capture_service(){
+	static int i = -1;
+	if(dma0_dma_enable_read()){
+		if(dma0_dma_done_read()){
+			/* Capture completed */
+			dma0_dma_enable_write(0);
+			buffer_owners[i] = BUFFER_COMPLETE;
+		}
+	}
+	else{
+		/* Get Buffer */
+		i = get_free_buffer();
+		if(i != -1){
+			buffer_owners[i] = BUFFER_CLAIMED;
+
+			/* Start a capture */
+			dma0_dma_base_write(buffers[i]);
+			dma0_dma_length_write(((512*640)*2));
+			dma0_dma_enable_write(1);
+		}
+	}
+}
+
+
+enum state {
+	STATE_WAIT = 0,
+	STATE_TRANSMIT
+};
+
+void transmit_service(){
+	static uint32_t idx = 0;
+	static enum state s = STATE_WAIT;
+	static uint32_t buffer_address = -1;
+
+	static uint32_t ipg = 0;
+	
+
+	switch(s){
+		case STATE_WAIT:
+			buffer_address = get_complete_buffer();
+			if(buffer_address != -1){
+				s = STATE_TRANSMIT;
+				buffer_owners[buffer_address] = BUFFER_CLAIMED;
+				idx = 0;
+				dma1_enable_write(0);
+			}
+		break;
+
+		case STATE_TRANSMIT:
+
+			if(dma1_enable_read()){
+				if(dma1_done_read()){
+					dma1_enable_write(0);
+
+					ipg = 1;
+					idx += 1;
+					if(idx == 512){
+						buffer_owners[buffer_address] = 0;
+						s = STATE_WAIT;
+						break;
+					}
+				}
+			}else{
+				if(ipg > 0){
+					ipg--;
+				}else{
+					csr_idx_value_write(idx);
+					csr_idx_level_write(320);
+					dma1_base_write(buffers[buffer_address] + idx * 1280);
+					dma1_length_write(1280);
+					dma1_enable_write(1);
+				}
+			}
+
+		break;
+	}
+
 }

@@ -48,7 +48,6 @@ uint32_t buffers[] = {
 
 uint8_t buffer_owners[] = {0,0,0};
 
-
 static unsigned char mac_addr[6] = {0x10, 0xe2, 0xd5, 0x00, 0x00, 0x01};
 static unsigned char ip_addr[4] = {192,168,1,50};
 
@@ -74,11 +73,7 @@ int main(int i, char **c)
 	printf("\e[1m | |_|   ||   |___   |   |  |   _   |\e[0m\n");
 	printf("\e[1m |_______||_______|  |___|  |__| |__|\e[0m\n");
 
-
-	//terminal_set_fg(TERMINAL_YELLOW);
 	printf("\e[92;1m    - Boson Ethernet interface - \e[0m\n");
-	//terminal_set_fg(TERMINAL_CYAN);
-
  	printf("\n (c) Copyright 2021 GetLabs \n");
  	printf(" fw built: "__DATE__ " " __TIME__ " \n\n");
 
@@ -103,34 +98,16 @@ int main(int i, char **c)
 	printf("\n");
 #endif
 
-	//_eth_init();
-
-	//_microudp_start(macadr, IPTOINT(LOCALIP1, LOCALIP2, LOCALIP3, LOCALIP4));
-
-	/* Enable single LED mode */
-	//eth_write_mmd_register(2, 0, 1 << 4);
-
-	//loopback_test();
-
-	// printf("--==========-- \e[1mBoson Init\e[0m ===========--\n");
+	printf("--========-- \e[1mEthernet Init\e[0m ==========--\n");
+ 	ethernet_init(mac_addr, ip_addr);
 	
-	// dma0_boson_gpio_out_write(0);
-	// dma0_boson_gpio_oe_write(1);
-
-
-
-	// Setup the Ethernet
-	ethernet_init(mac_addr, ip_addr);
 	telnet_init();
 
+	printf("--==========-- \e[1mBoson Init\e[0m ===========--\n");
  	boson_init();
 
-
-
     while(1) {
-
 		ethernet_service();
-
 
 		/* Start a capture */
 		dma0_dma_enable_write(0);
@@ -145,10 +122,6 @@ int main(int i, char **c)
 		}
 
 		dma0_dma_enable_write(0);
-//		flush_cpu_dcache();
-//		flush_l2_cache();
-//
-//		while(dma0_dma_offset_read() == 0);
 
 		uint32_t idx = 0;
 		while(idx <= 512){
@@ -169,28 +142,9 @@ int main(int i, char **c)
 					break;
 				}
 			}
-			
 
 			idx += 1;
 		}
-
-		//uint32_t idx = 0;
-		//while(idx < 640){
-		//	uint8_t* packet_data = microudp_get_tx_buffer();	
-		//	uint8_t* dram_ptr = (uint8_t*)(MAIN_RAM_BASE);	
-		//	dram_ptr+=2;	
-		//	uint32_t len = 1280;//format_request(packet_data, TFTP_WRQ, filename);
-		//	packet_data[0] = idx >> 8;
-		//	packet_data[1] = idx & 0xFF;
-		//	memcpy(packet_data + 2, dram_ptr + (idx * len), len );
-		//	microudp_send(32765, 9001, len + 2);
-		//	idx += 1;
-		//}
-
-		//microudp_service();
-		//msleep(10);
-
-
 	}
 	
 	return 0;

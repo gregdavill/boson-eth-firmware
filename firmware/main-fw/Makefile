@@ -3,7 +3,7 @@ include $(SOC_DIRECTORY)/software/common.mak
 
 CFLAGS += -fpack-struct -Os -I$(MAIN-FW_DIRECTORY)/include -fdata-sections -ffunction-sections
 
-OBJECTS=main.o time.o i2c.o boson.o flirCRC.o Serializer_BuiltIn.o telnet.o ethernet.o
+OBJECTS=main.o time.o i2c.o boson.o flirCRC.o Serializer_BuiltIn.o telnet.o ethernet.o stdio_wrap.o
 
 vpath % $(MAIN-FW_DIRECTORY) $(MAIN-FW_DIRECTORY)/boson
 

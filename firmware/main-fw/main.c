@@ -22,6 +22,8 @@
 #include <ethernet.h>
 #include <telnet.h>
 
+uint32_t frame_count = 0;
+
 /* prototypes */
 void isr(void);
 
@@ -54,6 +56,9 @@ int main(int i, char **c)
 #ifdef CSR_UART_BASE
 	uart_init();
 #endif
+
+	telnet_active = 0;
+	time_init();
 
 	msleep(25);
 	 
@@ -103,16 +108,31 @@ int main(int i, char **c)
     while(1) {
 		ethernet_service();
 	
-		if(wait > 0){
-			wait--;
-			msleep(1);
-		}else{
+
+		if(telnet_active)
+		{
 			capture_service();
 			transmit_service();
+			hb_service();
 		}
+
 	}
 	
 	return 0;
+}
+
+void hb_service()
+{
+	static int last_event;
+	static int counter;
+
+	if(elapsed(&last_event, CONFIG_CLOCK_FREQUENCY/100)) {
+		counter = counter + 1;
+		if(counter > 10) {
+			wprintf("frame_count: 0x%08x\n", frame_count);
+			counter = 0;
+		}
+	}
 }
 
 
@@ -201,6 +221,7 @@ void transmit_service(){
 		case STATE_WAIT:
 			buffer_address = get_complete_buffer();
 			if(buffer_address != -1){
+				frame_count++;
 				s = STATE_TRANSMIT;
 				buffer_owners[buffer_address] = BUFFER_CLAIMED;
 				idx = 0;

@@ -19,24 +19,8 @@
 
 #include <irq.h>
 #include <uart.h>
-
-#define IPTOINT(a, b, c, d) ((a << 24)|(b << 16)|(c << 8)|d)
-
-#ifndef LOCALIP1
-#define LOCALIP1 192
-#define LOCALIP2 168
-#define LOCALIP3 1
-#define LOCALIP4 50
-#endif
-
-#ifndef REMOTEIP1
-#define REMOTEIP1 192
-#define REMOTEIP2 168
-#define REMOTEIP3 1
-#define REMOTEIP4 100
-#endif
-
-static const unsigned char macadr[6] = {0x10, 0xe2, 0xd5, 0x00, 0x00, 0x01};
+#include <ethernet.h>
+#include <telnet.h>
 
 /* prototypes */
 void isr(void);
@@ -65,6 +49,8 @@ uint32_t buffers[] = {
 uint8_t buffer_owners[] = {0,0,0};
 
 
+static unsigned char mac_addr[6] = {0x10, 0xe2, 0xd5, 0x00, 0x00, 0x01};
+static unsigned char ip_addr[4] = {192,168,1,50};
 
 int main(int i, char **c)
 {	
@@ -117,120 +103,130 @@ int main(int i, char **c)
 	printf("\n");
 #endif
 
-	_eth_init();
+	//_eth_init();
 
 	//_microudp_start(macadr, IPTOINT(LOCALIP1, LOCALIP2, LOCALIP3, LOCALIP4));
 
 	/* Enable single LED mode */
-	eth_write_mmd_register(2, 0, 1 << 4);
+	//eth_write_mmd_register(2, 0, 1 << 4);
 
 	//loopback_test();
 
-	printf("--==========-- \e[1mBoson Init\e[0m ===========--\n");
+	// printf("--==========-- \e[1mBoson Init\e[0m ===========--\n");
 	
-	dma0_boson_gpio_out_write(0);
-	dma0_boson_gpio_oe_write(1);
-
-	boson_init();
+	// dma0_boson_gpio_out_write(0);
+	// dma0_boson_gpio_oe_write(1);
 
 
 
-	printf("\n");
-	msleep(10);
-	char spin[] = "-\\|/";
-	int spin_idx = 0;
+	// Setup the Ethernet
+	ethernet_init(mac_addr, ip_addr);
+	telnet_init();
 
-	printf("Wait For Link Up");
-	for(int timeout = 0; timeout < 40; timeout++){
-		printf(".");
-		msleep(250);
-		if((ethphy_rx_inband_status_read() & 0x7) == 0x5){
-			break;
-		}	
+	while(1){
+		ethernet_service();
 	}
 
-	unsigned int ip;
-	ip = IPTOINT(REMOTEIP1, REMOTEIP2, REMOTEIP3, REMOTEIP4);
+// 	boson_init();
 
-	printf("\nWait for partner address from ARP...");
-	while(1) {
-		_microudp_start(macadr, IPTOINT(LOCALIP1, LOCALIP2, LOCALIP3, LOCALIP4));
 
-		if(microudp_arp_resolve(ip))
-			break;
 
-		printf("\b%c", spin[spin_idx]);
-		spin_idx = (spin_idx + 1) % (sizeof(spin) - 1);
-		msleep(250);
-	}
+// 	printf("\n");
+// 	msleep(10);
+// 	char spin[] = "-\\|/";
+// 	int spin_idx = 0;
 
-	printf("\n Link Partner: ");
-	eth_print_mac();
-	printf("\n");
+// 	printf("Wait For Link Up");
+// 	for(int timeout = 0; timeout < 40; timeout++){
+// 		printf(".");
+// 		msleep(250);
+// 		if((ethphy_rx_inband_status_read() & 0x7) == 0x5){
+// 			break;
+// 		}	
+// 	}
+
+// 	unsigned int ip;
+// 	ip = IPTOINT(REMOTEIP1, REMOTEIP2, REMOTEIP3, REMOTEIP4);
+
+// 	printf("\nWait for partner address from ARP...");
+// 	while(1) {
+// 		_microudp_start(macadr, IPTOINT(LOCALIP1, LOCALIP2, LOCALIP3, LOCALIP4));
+
+// 		if(microudp_arp_resolve(ip))
+// 			break;
+
+// 		printf("\b%c", spin[spin_idx]);
+// 		spin_idx = (spin_idx + 1) % (sizeof(spin) - 1);
+// 		msleep(250);
+// 	}
+
+// 	printf("\n Link Partner: ");
+// 	eth_print_mac();
+// 	printf("\n");
 
 	
 
-    while(1) {
-		/* Start a capture */
-		dma0_dma_enable_write(0);
-		dma0_dma_base_write(0);
-		dma0_dma_length_write(((512*640)*2));
-		dma0_dma_enable_write(1);
-		/* While capture is running */
-		while(1){
-			if(dma0_dma_done_read()){
-				break;
-			}
-		}
+//     while(1) {
+// 		/* Start a capture */
+// 		dma0_dma_enable_write(0);
+// 		dma0_dma_base_write(0);
+// 		dma0_dma_length_write(((512*640)*2));
+// 		dma0_dma_enable_write(1);
+// 		/* While capture is running */
+// 		while(1){
+// 			if(dma0_dma_done_read()){
+// 				break;
+// 			}
+// 		}
 
-		dma0_dma_enable_write(0);
-//		flush_cpu_dcache();
-//		flush_l2_cache();
-//
-//		while(dma0_dma_offset_read() == 0);
+// 		dma0_dma_enable_write(0);
+// //		flush_cpu_dcache();
+// //		flush_l2_cache();
+// //
+// //		while(dma0_dma_offset_read() == 0);
 
-		uint32_t idx = 0;
-		while(idx <= 512){
+// 		uint32_t idx = 0;
+// 		while(idx <= 512){
 
-			busy_wait_us(10);
+// 			busy_wait_us(10);
 
-			dma1_enable_write(0);
+// 			dma1_enable_write(0);
 
-			csr_idx_value_write(idx);
-			csr_idx_level_write(64);
-			dma1_base_write(0 + idx * 1280);
-			dma1_length_write((1280));
-			dma1_enable_write(1);
+// 			csr_idx_value_write(idx);
+// 			csr_idx_level_write(64);
+// 			dma1_base_write(0 + idx * 1280);
+// 			dma1_length_write((1280));
+// 			dma1_enable_write(1);
 
-			/* While capture is running */
-			while(1){
-				if(dma1_done_read()){
-					break;
-				}
-			}
+// 			/* While capture is running */
+// 			while(1){
+// 				if(dma1_done_read()){
+// 					break;
+// 				}
+// 			}
 			
 
-			idx += 1;
-		}
+// 			idx += 1;
+// 		}
 
-		//uint32_t idx = 0;
-		//while(idx < 640){
-		//	uint8_t* packet_data = microudp_get_tx_buffer();	
-		//	uint8_t* dram_ptr = (uint8_t*)(MAIN_RAM_BASE);	
-		//	dram_ptr+=2;	
-		//	uint32_t len = 1280;//format_request(packet_data, TFTP_WRQ, filename);
-		//	packet_data[0] = idx >> 8;
-		//	packet_data[1] = idx & 0xFF;
-		//	memcpy(packet_data + 2, dram_ptr + (idx * len), len );
-		//	microudp_send(32765, 9001, len + 2);
-		//	idx += 1;
-		//}
+// 		//uint32_t idx = 0;
+// 		//while(idx < 640){
+// 		//	uint8_t* packet_data = microudp_get_tx_buffer();	
+// 		//	uint8_t* dram_ptr = (uint8_t*)(MAIN_RAM_BASE);	
+// 		//	dram_ptr+=2;	
+// 		//	uint32_t len = 1280;//format_request(packet_data, TFTP_WRQ, filename);
+// 		//	packet_data[0] = idx >> 8;
+// 		//	packet_data[1] = idx & 0xFF;
+// 		//	memcpy(packet_data + 2, dram_ptr + (idx * len), len );
+// 		//	microudp_send(32765, 9001, len + 2);
+// 		//	idx += 1;
+// 		//}
 
-		//microudp_service();
-		//msleep(10);
+// 		//microudp_service();
+// 		//msleep(10);
 
 
-	}
+// 	}
 	
 	return 0;
 }

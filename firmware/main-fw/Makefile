@@ -1,11 +1,14 @@
 include ../include/generated/variables.mak
 include $(SOC_DIRECTORY)/software/common.mak
 
-CFLAGS += -fpack-struct -O3 -I$(MAIN-FW_DIRECTORY)/include -fdata-sections -ffunction-sections
+CFLAGS += -fpack-struct -Os -I$(MAIN-FW_DIRECTORY)/include -fdata-sections -ffunction-sections
 
-OBJECTS=main.o time.o i2c.o boson.o flirCRC.o Serializer_BuiltIn.o microudp.o eth.o
+OBJECTS=main.o time.o i2c.o boson.o flirCRC.o Serializer_BuiltIn.o telnet.o ethernet.o
 
 vpath % $(MAIN-FW_DIRECTORY) $(MAIN-FW_DIRECTORY)/boson
+
+
+include $(UIP_DIRECTORY)/Makefile.mk
 
 all: main-fw.bin size
 
@@ -26,12 +29,12 @@ main-fw.elf: $(MAIN-FW_DIRECTORY)/linker.ld $(OBJECTS)
 	$(LD) $(LDFLAGS) -L$(BUILDINC_DIRECTORY)/generated -T $(MAIN-FW_DIRECTORY)/linker.ld -N -o $@ \
 		../libbase/crt0.o \
 		$(OBJECTS) \
-		-gc-sections \
+		-Map=a.map \
 		-L../libbase \
 		-L../libcompiler_rt \
 		-L../liblitedram \
-		-L../libliteeth \
-		-llitedram -lliteeth -lbase-nofloat -lcompiler_rt
+		-L../uip \
+		-llitedram -luip -lbase-nofloat -lcompiler_rt
 ifneq ($(OS),Windows_NT)
 	chmod -x $@
 endif

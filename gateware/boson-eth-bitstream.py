@@ -184,7 +184,8 @@ class ethSoC(SoCCore):
                           cpu_type='vexriscv', with_uart=True, # uart_name='stream',
                           csr_data_width=32,
                           ident="Boson Ethernet SoC", ident_version=True, wishbone_timeout_cycles=128,
-                          integrated_rom_size=64*1024)
+                          integrated_rom_size=64*1024, 
+                          integrated_sram_size=32*1024)
 
         self.submodules.i2c = I2CMaster(platform.request("i2c"))
 
@@ -364,12 +365,12 @@ class ethSoC(SoCCore):
 
         os.makedirs(builder.output_dir, exist_ok=True)
 
-        src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "firmware", "main-fw"))
-        builder.add_software_package("main-fw", src_dir)
+        builder.add_software_package("uip", "{}/../firmware/uip".format(os.getcwd()))
+        builder.add_software_package("main-fw", "{}/../firmware/main-fw".format(os.getcwd()))
 
         builder._prepare_rom_software()
         builder._generate_includes()
-        builder._generate_rom_software(compile_bios=True)
+        builder._generate_rom_software(compile_bios=False)
         
         firmware_file = os.path.join(builder.output_dir, "software", "main-fw","main-fw.bin")
         firmware_data = get_mem_data(firmware_file, self.cpu.endianness)

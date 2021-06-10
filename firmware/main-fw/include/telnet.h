@@ -21,11 +21,7 @@
 #define TELNET_BUFFER_SIZE_RX 4096
 #define TELNET_BUFFER_SIZE_TX 4096
 
-int telnet_active;
-
-struct tcp_socket telnet_socket;
-uint8_t telnet_rx_buffer[TELNET_BUFFER_SIZE_RX];
-uint8_t telnet_tx_buffer[TELNET_BUFFER_SIZE_TX];
+extern int telnet_active;
 
 void telnet_init(void);
 int telnet_event_callback(struct tcp_socket *s, void *ptr, tcp_socket_event_t event);

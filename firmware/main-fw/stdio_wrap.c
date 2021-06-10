@@ -10,6 +10,9 @@
 
 #include "stdio_wrap.h"
 
+#define STDIO_BUFFER_SIZE 256
+static char stdio_write_buffer[STDIO_BUFFER_SIZE];
+
 /* Transform LF -> CRLF in s, putting the result in stdio_write_buffer
  */
 char *translate_crlf(const char *s, int trailing_lf) {

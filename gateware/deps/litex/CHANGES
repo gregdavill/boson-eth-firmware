@@ -1,0 +1,223 @@
+[> 2021.XX, planned for August 2021
+-----------------------------------
+
+	[> Issues resolved
+	------------------
+	- wishbone/UpConverter: Fix SEL propagation.
+
+	[> Added Features
+	-----------------
+	- cpu/vexriscv:   Add CFU support.
+	- soc/controller: Add separate SoC/CPU reset fields.
+
+	[> API changes/Deprecation
+	--------------------------
+	- soc_core: --integrated-rom-file argument renamed to --integrated-rom-init.
+
+
+[> 2021.04, released on May 3th 2021
+------------------------------------
+
+	[> Issues resolved
+	------------------
+	- litex_term:         Fix Windows/OS-X support.
+	- soc/USB-ACM:        Fix reset clock domain.
+	- litex_json2dts:     Various fixes/improvements.
+	- cores/clock:        Fix US(P)IDELAYCTRL reset sequence.
+	- cpu/Vexriscv:       Fix Lite variant ABI (has multiplier so can use rv32im).
+	- BIOS:               Fix various compiler warnings.
+	- LiteSDCard:         Fix various issues, enable multiblock reads/writes and improve performance.
+	- CSR:                Fix address wrapping within a CSRBank.
+	- soc/add_etherbone:  Fix UDPIPCore clock domain.
+	- stream/Gearbox:     Fix some un-supported cases.
+	- cpu/VexRiscv-SMP:   Fix build on Intel/Altera devices with specific RAM implementation.
+	- timer:              Fix AutoDoc.
+	- Microwatt/Ethernet: Fix build.
+	- soc/software:       Link with compiler instead of ld.
+
+	[> Added Features
+	-----------------
+	- Lattice-NX:             Allow up to 320KB RAMs.
+	- BIOS:                   Allow compilation with UART disabled.
+	- litex_json2dts:         Simplify/Improve and allow VexRiscv/Mor1kx support.
+	- BIOS/i2c:               Improve cmd_i2c.
+	- BIOS/liblitedram:       Various improvements for DDR4/LPDDR.
+	- cores/Timer:            Add initial unit test.
+	- cores:                  Add initial JTAGBone support on Xilinx FPGAs.
+	- litex_term:             Improve JTAG-UART support.
+	- litex_server:           Add JTAGBone support.
+	- VexRiscv-SMP:           Add --without-out-of-order and --with-wishbone-memory capabilities.
+	- BIOS:                   Allow specify TRIPLE with LITEX_ENV_CC_TRIPLE.
+	- litex_client:           Add simple --read/--write support.
+	- OpenFPGALoader:         Add flash method.
+	- litex_sim:              Add GTKWave savefile generator.
+	- litex_term:             Add nios2-terminal support.
+	- cpu/mor1kx:             Add initial SMP support.
+	- interconnect/axi:       Add tkeep support.
+	- cores/gpio:             Add IRQ support to GPIOIn.
+	- cpu:                    Add initial lowRISC's Ibex support.
+	- build/xilinx/Vivado:    Allow tcl script to be added as ip.
+	- cores/uart:             Rewrite PHYs to reduce resource usage and improve readability.
+	- cores/pwm:              Add configurable default enable/width/period values.
+	- cores/leds:             Add optional dimming (through PWM).
+	- soc/add_pcie:           Allow disabling MSI when not required.
+	- export/svd:             Add constants to SVD export.
+	- BIOS:                   Allow dynamic Ethernet IP address.
+	- BIOS:                   Add boot command to boot from memory.
+	- cores:                  Add simple VideoOut core with Terminal, ColorBards, Framebuffer + various PHYs (VGA, DVI, HDMI, etc...).
+	- csr/EventSourceProcess: Add rising edge support and edge selection.
+	- soc/integration:        Cleanup/Simplify soc_core/builder.
+	- soc/integrated_rom:     Add automatic BIOS ROM resize to minimize blockram usage and improve flexibility.
+	- interconnect/axi:       Add AXILite Clock Domain Crossing.
+	- cores/xadc:             Add Ultrascale support.
+	- soc/add_ethernet:       Allow nrxslots/ntxslots configuration.
+	- cpu/VexRiscv-SMP:       Integrate FPU/RVC support.
+	- soc/add_csr:            Add auto-allocation mode and switch to it in LiteX's code base.
+	- soc/BIOS:               Add method to check BIOS requirements during the build and improve error message when not satisfied.
+	- LiteEth:                Add initial timestamping support.
+	- litex_client:           Add optional filter to --regs.
+	- LiteDRAM:               Add LPDDR4 support.
+	- BIOS/netboot:           Allow specifying .json file.
+	- cores/clock:            Add initial Gowin GW1N PLL support.
+	- LiteSDCard:             Add IRQ support.
+
+	[> API changes/Deprecation
+	--------------------------
+	- platforms/targets: Move all platforms/targets to https://github.com/litex-hub/litex-boards.
+	- litex_term:        Remove flashing capability.
+	- cores/uart:        Disable dynamic baudrate by default (Unused and save resources).
+
+[> 2020.12, released on December 30th 2020
+------------------------------------------
+
+	[> Issues resolved
+	------------------
+	- fix SDCard writes.
+	- fix crt0 .data initialize on SERV/Minerva.
+	- fix Zynq7000 AXI HP Slave integration.
+
+	[> Added Features
+	------------------
+	- Wishbone2CSR: Add registered version and use it on system with SDRAM.
+	- litex_json2dts: Add Mor1kx DTS generation support.
+	- Build: Add initial Radiant support for NX FPGA family.
+	- SoC: Allow ROM to be optionally writable (for contents overwrite over UARTBone/Etherbone).
+	- LiteSDCard: Improve BIOS support.
+	- UARTBone: Add clock domain support.
+	- Clocking: Uniformize reset on iCE40PLL/ECP5PLL.
+	- LiteDRAM: Improve calibration and add BIOS debug commands.
+	- Clocking: Add initial Ultrascale+ support.
+	- Sim: Allow dynamic enable/disable of tracing.
+	- BIOS: Improve memtest and report.
+	- BIOS: Rename/reorganize commands.
+	- litex_server: Simplify usage with PCIe and add debug parameter.
+	- LitePCIe: Add Ultrascale(+) support up to Gen3 X16.
+	- LiteSATA: Add BIOS/Boot integration.
+	- Add litex_cli to provides common RemoteClient functions: get identifier, dump regs, etc...
+	- LiteDRAM: Simplify BIST integration.
+	- Toolchains/Programmers: Improve checks/error reporting.
+	- BIOS: add leds command.
+	- SoC: Do a full reset of the SoC on reboot (not only the CPU).
+	- Etherbone: Improve efficiency/performance.
+	- LiteDRAM: Improve DDR4/DDR3 calibration.
+	- Build: Add initial Oxide support for NX FPGA family.
+	- Clock/RAM: Reorganize for better modularity.
+	- SPI-OPI: Various improvements for Betrusted.
+	- litex_json2dts: Improvements to use it with mor1kx and VexRiscv-SMP.
+	- Microwatt: Add IRQ support.
+	- BIOS: Add i2c_scan command.
+	- Builder: Simplify Documentation generation with --doc args on targets.
+	- CSR: Add documentation to EventManager registers.
+	- BIOS: Allow disabling timestamp for reproducible builds.
+	- Symbiflow: Remove workarounds on targets.
+	- litex_server: Simplify use on PCIe, allow direct CommXY use in scripts to bypass litex_server.
+	- Zynq7000: Improve PS7 configuration support (now supporting .xci/preset/dict)
+	- CV32E40P: Improve OBI efficiency.
+	- litex_term: Improve upload speed with CRC check enabled, deprecate --no-crc (no longer useful).
+	- BIOS: Add mem_list command to list available memory and use mem_xy commands on them.
+	- litex_term: Add Crossover and JTAG_UART support.
+	- Software: Add minimal bare metal demo app.
+	- UART: Add Crossover+Bridge support.
+	- VexRiscv-SMP: Integrate AES support.
+	- LitePCIe: Allow AXI mastering from FPGA (AXI-Lite and Full).
+	- mor1kx: Add standard+fpu and linux+fpu variants.
+
+	[> API changes/Deprecation
+	--------------------------
+	- BIOS: commands have been renamed/reorganized.
+	- LiteDRAM: rdcmdphase/wrcmdphase no longer exposed.
+	- CSR: change default csr_data_width from 8 to 32.
+
+[> 2020.08, released on August 7th 2020
+---------------------------------------
+
+	[> Issues resolved
+	------------------
+	- Fix flush_cpu_icache on VexRiscv.
+	- Fix `.data` section placed in rom (#566)
+
+	[> Added Features
+	------------------
+	- Properly integrate Minerva CPU.
+	- Add nMigen dependency.
+	- Pluggable CPUs.
+	- BIOS history, autocomplete.
+	- Improve boards's programmers.
+	- Add Microwatt CPU support (with GHDL-Yosys-plugin support for FOSS toolchains).
+	- Speedup Memtest using an LFSR.
+	- Add LedChaser on boards.
+	- Improve WishboneBridge.
+	- Improve Diamond constraints.
+	- Use InterconnectPointToPoint when 1 master,1 slave and no address translation.
+	- Add CV32E40P CPU support (ex RI5CY).
+	- JTAG UART with uart_name=jtag_uart (validated on Spartan6, 7-Series, Ultrascale(+)).
+	- Add Symbiflow experimental support on Arty.
+	- Add SDCard (SPI and SD modes) boot from FAT/exFAT filesystems with FatFs.
+	- Simplify boot with boot.json configuration file.
+	- Revert to a single crt0 (avoid ctr/xip variants).
+	- Add otional DMA bus for Cache Coherency on CPU(s) with DMA/Cache Coherency interface.
+	- Add AXI-Lite bus standard support.
+	- Add VexRiscv SMP CPU support.
+
+	[> API changes/Deprecation
+	--------------------------
+	- Add --build --load arguments to targets.
+	- Deprecate soc.interconnect.wishbone.UpConverter (will be rewritten if useful).
+	- Deprecate soc.interconnect.wishbone.CSRBank (Does not seem to be used by anyone).
+	- Move soc.interconnect.wishbone2csr.WB2CSR to soc.interconnect.wishbone.Wishbone2CSR.
+	- Move soc.interconnect.wishbonebridge.WishboneStreamingBridge to soc.cores.uart.Stream2Wishbone.
+	- Rename --gateware-toolchain target parameter to --toolchain.
+	- Integrate Zynq's PS7 as a regular CPU (zynq7000) and deprecate SoCZynq.
+
+[> 2020.04, released on April 28th, 2020
+----------------------------------------
+
+	[> Description
+	--------------
+	First release of LiteX and the ecosystem of cores!
+
+	LiteX is a Migen/MiSoC based Core/SoC builder that provides the infrastructure to easily create
+	Cores/SoCs (with or without CPU).
+
+	The common components of a SoC are provided directly:
+	- Buses and Streams (Wishbone, AXI, Avalon-ST)
+	- Interconnect
+	- Common cores (RAM, ROM, Timer, UART, etc...)
+	- CPU wrappers/integration
+	- etc...
+	And SoC creation capabilities can be greatly extended with the ecosystem of LiteX cores (DRAM,
+	PCIe, Ethernet, SATA, etc...) that can be integrated/simulated/build easily with LiteX.
+
+	It also provides build backends for open-source and vendors toolchains.
+
+	[> Issues resolved
+	------------------
+	- NA
+
+	[> Added Features
+	------------------
+	- NA
+
+	[> API changes/Deprecation
+	--------------------------
+	- https://github.com/enjoy-digital/litex/pull/399: Converting LiteX to use Python modules.

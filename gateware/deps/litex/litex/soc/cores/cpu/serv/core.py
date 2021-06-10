@@ -1,0 +1,97 @@
+#
+# This file is part of LiteX.
+#
+# Copyright (c) 2020 Florent Kermarrec <florent@enjoy-digital.fr>
+# Copyright (c) 2020 Greg Davill <greg.davill@gmail.com>
+# SPDX-License-Identifier: BSD-2-Clause
+
+import os
+
+from migen import *
+
+from litex import get_data_mod
+from litex.soc.interconnect import wishbone
+from litex.soc.cores.cpu import CPU, CPU_GCC_TRIPLE_RISCV32
+
+# Variants -----------------------------------------------------------------------------------------
+
+CPU_VARIANTS = ["standard"]
+
+# SERV ---------------------------------------------------------------------------------------------
+
+class SERV(CPU):
+    name                 = "serv"
+    human_name           = "SERV"
+    variants             = CPU_VARIANTS
+    data_width           = 32
+    endianness           = "little"
+    gcc_triple           = CPU_GCC_TRIPLE_RISCV32
+    linker_output_format = "elf32-littleriscv"
+    nop                  = "nop"
+    io_regions           = {0x80000000: 0x80000000} # Origin, Length.
+
+    # GCC Flags.
+    @property
+    def gcc_flags(self):
+        flags =  "-march=rv32i "
+        flags += "-mabi=ilp32 "
+        flags += "-D__serv__ "
+        return flags
+
+    def __init__(self, platform, variant="standard"):
+        self.platform     = platform
+        self.variant      = variant
+        self.reset        = Signal()
+        self.ibus         = ibus = wishbone.Interface()
+        self.dbus         = dbus = wishbone.Interface()
+        self.periph_buses = [ibus, dbus] # Peripheral buses (Connected to main SoC's bus).
+        self.memory_buses = []           # Memory buses (Connected directly to LiteDRAM).
+
+        # # #
+
+        self.cpu_params = dict(
+            # Clk / Rst
+            i_clk   = ClockSignal(),
+            i_i_rst = ResetSignal() | self.reset,
+
+            # Timer IRQ.
+            i_i_timer_irq = 0,
+
+            # Ibus.
+            o_o_ibus_adr = Cat(Signal(2), ibus.adr),
+            o_o_ibus_cyc = ibus.cyc,
+            i_i_ibus_rdt = ibus.dat_r,
+            i_i_ibus_ack = ibus.ack,
+
+            # Dbus.
+            o_o_dbus_adr = Cat(Signal(2), dbus.adr),
+            o_o_dbus_dat = dbus.dat_w,
+            o_o_dbus_sel = dbus.sel,
+            o_o_dbus_we  = dbus.we,
+            o_o_dbus_cyc = dbus.cyc,
+            i_i_dbus_rdt = dbus.dat_r,
+            i_i_dbus_ack = dbus.ack,
+        )
+        self.comb += [
+            ibus.stb.eq(ibus.cyc),
+            ibus.sel.eq(0xf),
+            dbus.stb.eq(dbus.cyc),
+        ]
+
+        # Add Verilog sources
+        self.add_sources(platform)
+
+    def set_reset_address(self, reset_address):
+        assert not hasattr(self, "reset_address")
+        self.reset_address = reset_address
+        self.cpu_params.update(p_RESET_PC=reset_address)
+
+    @staticmethod
+    def add_sources(platform):
+        vdir = get_data_mod("cpu", "serv").data_location
+        platform.add_source_dir(os.path.join(vdir, "rtl"))
+        platform.add_verilog_include_path(os.path.join(vdir, "rtl"))
+
+    def do_finalize(self):
+        assert hasattr(self, "reset_address")
+        self.specials += Instance("serv_rf_top", **self.cpu_params)

@@ -48,7 +48,6 @@ class LiteEthMAC(Module, AutoCSR):
             self.ev, self.bus = self.interface.sram.ev, self.interface.bus
             self.csrs = self.interface.get_csrs() + self.core.get_csrs()
             if interface == "hybrid":
-                assert dw == 8
                 # Hardware MAC
                 self.submodules.crossbar     = LiteEthMACCrossbar(dw)
                 self.submodules.mac_crossbar = LiteEthMACCoreCrossbar(self.core, self.crossbar, self.interface, dw, endianness, hw_mac)
@@ -72,23 +71,31 @@ class LiteEthMACCoreCrossbar(Module):
         tx_pipe = []
         rx_pipe = []
 
-        tx_last_be = last_be.LiteEthMACTXLastBE(dw)
-        rx_last_be = last_be.LiteEthMACRXLastBE(dw)
-        tx_pipe += [tx_last_be]
-        rx_pipe += [rx_last_be]
-        self.submodules += tx_last_be, rx_last_be
+        if dw != 32:
+            tx_last_be = last_be.LiteEthMACTXLastBE(dw)
+            rx_last_be = last_be.LiteEthMACRXLastBE(dw)
+            tx_pipe += [tx_last_be]
+            rx_pipe += [rx_last_be]
+            self.submodules += tx_last_be, rx_last_be
 
-        tx_converter = stream.StrideConverter(
-            description_from = eth_phy_description(32),
-            description_to   = eth_phy_description(dw),
-            reverse          = reverse)
-        rx_converter = stream.StrideConverter(
-            description_from = eth_phy_description(dw),
-            description_to   = eth_phy_description(32),
-            reverse          = reverse)
-        rx_pipe += [rx_converter]
-        tx_pipe += [tx_converter]
-        self.submodules += tx_converter, rx_converter
+            tx_converter = stream.StrideConverter(
+                description_from = eth_phy_description(32),
+                description_to   = eth_phy_description(dw),
+                reverse          = reverse)
+            rx_converter = stream.StrideConverter(
+                description_from = eth_phy_description(dw),
+                description_to   = eth_phy_description(32),
+                reverse          = reverse)
+            rx_pipe += [rx_converter]
+            tx_pipe += [tx_converter]
+            self.submodules += tx_converter, rx_converter
+
+        else:
+            tx_buffer = stream.Buffer(eth_phy_description(dw))
+            rx_buffer = stream.Buffer(eth_phy_description(dw))
+            self.submodules += tx_buffer, rx_buffer
+            rx_pipe += [rx_buffer]
+            tx_pipe += [tx_buffer]
 
         # CPU packet processing
         self.submodules.tx_pipe = stream.Pipeline(*reversed(tx_pipe))

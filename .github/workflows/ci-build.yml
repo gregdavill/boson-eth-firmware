@@ -1,0 +1,30 @@
+name: ci-build
+
+on:
+  push:
+
+jobs:
+  ci-build:
+    runs-on: ubuntu-latest
+    steps:    
+      # Checkout Repository
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: YosysHQ setup
+        uses: YosysHQ/setup-oss-cad-suite@v1
+        run: yosys --version
+      
+      - name: RISC-V GNU setup
+        uses: gregdavill/setup-riscv-gnu-toolchain@v1.0
+        run: riscv-none-embed-gcc --version
+
+      # Build
+      - name: Build project
+        run: |
+          pushd gateware
+          python3 boson-eth-bitstream.py --lx-check-deps
+          python3 boson-eth-bitstream.py --lx-print-env
+          python3 boson-eth-bitstream.py
+          popd
+

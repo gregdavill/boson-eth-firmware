@@ -1,0 +1,2 @@
+graft pythondata_software_compiler_rt/data/
+global-exclude *.py[cod]

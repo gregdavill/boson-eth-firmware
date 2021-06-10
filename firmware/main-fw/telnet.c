@@ -11,8 +11,16 @@
 #define TELNET_RINGBUFFER_MASK_RX (TELNET_RINGBUFFER_SIZE_RX-1)
 
 static char telnet_rx_buf[TELNET_RINGBUFFER_SIZE_RX];
+static uint8_t telnet_rx_buffer[TELNET_BUFFER_SIZE_RX];
+static uint8_t telnet_tx_buffer[TELNET_BUFFER_SIZE_TX];
 static volatile unsigned int telnet_rx_produce;
 static unsigned int telnet_rx_consume;
+
+
+int telnet_active;
+
+struct tcp_socket telnet_socket;
+
 
 void telnet_init(void)
 {

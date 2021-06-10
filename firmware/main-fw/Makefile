@@ -1,7 +1,7 @@
 include ../include/generated/variables.mak
 include $(SOC_DIRECTORY)/software/common.mak
 
-CFLAGS += -fpack-struct -Os -I$(MAIN-FW_DIRECTORY)/include -fdata-sections -ffunction-sections
+CFLAGS += -fpack-struct -O2 -I$(MAIN-FW_DIRECTORY)/include -fdata-sections -ffunction-sections
 
 OBJECTS=main.o time.o i2c.o boson.o flirCRC.o Serializer_BuiltIn.o telnet.o ethernet.o stdio_wrap.o
 
@@ -28,6 +28,7 @@ main-fw.elf: $(MAIN-FW_DIRECTORY)/linker.ld $(OBJECTS)
 %.elf: 
 	$(LD) $(LDFLAGS) -L$(BUILDINC_DIRECTORY)/generated -T $(MAIN-FW_DIRECTORY)/linker.ld -N -o $@ \
 		../libbase/crt0.o \
+		-gc-sections \
 		$(OBJECTS) \
 		-Map=a.map \
 		-L../libbase \

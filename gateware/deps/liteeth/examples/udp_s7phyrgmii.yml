@@ -1,0 +1,15 @@
+#
+# This file is part of LiteEth.
+#
+# Copyright (c) 2020 Florent Kermarrec <florent@enjoy-digital.fr>
+# SPDX-License-Identifier: BSD-2-Clause
+
+# PHY ----------------------------------------------------------------------
+phy:         LiteEthS7PHYRGMII
+vendor:      xilinx
+# Core ---------------------------------------------------------------------
+clk_freq:    125e6
+core:        udp
+mac_address: 0x10e2d5000000
+ip_address:  192.168.1.50
+port:        6000

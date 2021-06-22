@@ -19,6 +19,9 @@ void uip_log(char *msg)
 #endif
 }
 
+
+static uint8_t ethernet_outputfunc(void);
+
 #ifdef ETHMAC_BASE
 
 void ethernet_init(const unsigned char * mac_addr, const unsigned char *ip_addr)
@@ -44,7 +47,16 @@ void ethernet_init(const unsigned char * mac_addr, const unsigned char *ip_addr)
 	uip_ipaddr(&ipaddr, ip_addr[0], ip_addr[1], ip_addr[2], ip_addr[3]);
 	uip_sethostaddr(&ipaddr);
 
+	tcpip_set_outputfunc(ethernet_outputfunc);
 	printf("uIP init done with ip %d.%d.%d.%d\n", ip_addr[0], ip_addr[1], ip_addr[2], ip_addr[3]);
+}
+
+uint8_t ethernet_outputfunc(void) {
+	if(uip_len > 0){
+		uip_arp_out();
+		liteethmac_send();
+	}
+	return 0;
 }
 
 void ethernet_service(void) {

@@ -111,15 +111,42 @@ int main(int i, char **c)
 
 		if(telnet_active)
 		{
-			capture_service();
-			transmit_service();
+		//	capture_service();
+		//	transmit_service();
 			hb_service();
 		}
+
+		udp_service();
 
 	}
 	
 	return 0;
 }
+
+
+static int init = 0;
+static uip_ipaddr_t addr;
+static struct uip_udp_conn *c;
+static uint8_t data[64];
+void udp_service()
+{
+	static int last_event;
+
+	if(init == 0){
+		uip_ipaddr(&addr, 192,168,1,100);
+		c = uip_udp_new(&addr, UIP_HTONS(12345));
+		if(c != NULL) {
+			uip_udp_bind(c, UIP_HTONS(12344));
+			init = 1;
+		}
+	}else{
+		/* Test UDP output */
+		if(elapsed(&last_event, CONFIG_CLOCK_FREQUENCY/1) && init) {
+			uip_udp_packet_send(c, data, 64);
+		}
+	}
+}
+
 
 void hb_service()
 {

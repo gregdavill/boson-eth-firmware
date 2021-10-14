@@ -125,7 +125,7 @@ static int init = 0;
 static uip_ipaddr_t addr;
 static struct uip_udp_conn *c;
 static uint8_t data[64];
-void udp_service()
+void _udp_service()
 {
 	static int last_event;
 

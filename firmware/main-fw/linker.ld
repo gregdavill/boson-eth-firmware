@@ -1,9 +1,9 @@
-INCLUDE output_format.ld
+INCLUDE generated/output_format.ld
 ENTRY(_start)
 
 __DYNAMIC = 0;
 
-INCLUDE regions.ld
+INCLUDE generated/regions.ld
 
 SECTIONS
 {

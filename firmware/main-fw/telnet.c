@@ -127,7 +127,7 @@ int telnet_vprintf(const char *fmt, va_list args)
 	int len;
 	char outbuf[TELNET_PRINTF_BUFFER_SIZE];
 
-	len = vscnprintf(outbuf, sizeof(outbuf), fmt, args);
+	len = vsnprintf(outbuf, sizeof(outbuf), fmt, args);
 	outbuf[len] = 0;
 	telnet_putsnonl(outbuf);
 

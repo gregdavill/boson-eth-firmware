@@ -25,17 +25,17 @@ endif
 
 main-fw.elf: $(MAIN-FW_DIRECTORY)/linker.ld $(OBJECTS)
 
-%.elf: 
-	$(LD) $(LDFLAGS) -L$(BUILDINC_DIRECTORY)/generated -T $(MAIN-FW_DIRECTORY)/linker.ld -N -o $@ \
-		../libbase/crt0.o \
-		-gc-sections \
+vpath %.a $(PACKAGES:%=../%)
+
+%.elf: crt0.o libuip.a $(LIBS:%=%.a)
+	$(CC) $(LDFLAGS) -T $(MAIN-FW_DIRECTORY)/linker.ld -N -o $@ \
+		crt0.o \
 		$(OBJECTS) \
-		-Map=a.map \
-		-L../libbase \
-		-L../libcompiler_rt \
-		-L../liblitedram \
-		-L../uip \
-		-llitedram -luip -lbase-nofloat -lcompiler_rt
+		$(PACKAGES:%=-L../%) -L../uip \
+		-Wl,--whole-archive \
+		-Wl,--gc-sections \
+		-luip $(LIBS:lib%=-l%)
+
 ifneq ($(OS),Windows_NT)
 	chmod -x $@
 endif
@@ -47,6 +47,9 @@ endif
 	$(compile)
 
 %.o: %.S
+	$(assemble)
+
+crt0.o: $(CPU_DIRECTORY)/crt0.S
 	$(assemble)
 
 clean:

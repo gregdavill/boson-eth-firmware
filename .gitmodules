@@ -1,0 +1,4 @@
+[submodule "pythondata_software_picolibc/data"]
+	path = pythondata_software_picolibc/data
+	url = https://github.com/picolibc/picolibc
+	branch = main

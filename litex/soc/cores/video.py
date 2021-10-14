@@ -606,10 +606,15 @@ class VideoTerminal(Module):
 
 class VideoFrameBuffer(Module, AutoCSR):
     """Video FrameBuffer"""
-    def __init__(self, dram_port, hres=800, vres=600, base=0x00000000, fifo_depth=65536, clock_domain="sys", clock_faster_than_sys=False):
+    def __init__(self, dram_port, hres=800, vres=600, base=0x00000000, fifo_depth=65536, clock_domain="sys", clock_faster_than_sys=False, format="rgb888"):
         self.vtg_sink  = vtg_sink = stream.Endpoint(video_timing_layout)
         self.source    = source   = stream.Endpoint(video_data_layout)
         self.underflow = Signal()
+
+        self.depth = depth = {
+            "rgb888" : 32,
+            "rgb565" : 16
+        }[format]
 
         # # #
 
@@ -618,29 +623,29 @@ class VideoFrameBuffer(Module, AutoCSR):
         self.submodules.dma = LiteDRAMDMAReader(dram_port, fifo_depth=fifo_depth//(dram_port.data_width//8), fifo_buffered=True)
         self.dma.add_csr(
             default_base   = base,
-            default_length = hres*vres*32//8, # 32-bit RGB-444
+            default_length = hres*vres*depth//8, # 32-bit RGB-888 or 16-bit RGB-565
             default_enable = 0,
             default_loop   = 1
         )
 
-        # If DRAM Data Width > 32-bit and Video clock is faster than sys_clk:
-        if (dram_port.data_width > 32) and clock_faster_than_sys:
+        # If DRAM Data Width > depth and Video clock is faster than sys_clk:
+        if (dram_port.data_width > depth) and clock_faster_than_sys:
             # Do Clock Domain Crossing first...
             self.submodules.cdc = stream.ClockDomainCrossing([("data", dram_port.data_width)], cd_from="sys", cd_to=clock_domain)
             self.comb += self.dma.source.connect(self.cdc.sink)
             # ... and then Data-Width Conversion.
-            self.submodules.conv = stream.Converter(dram_port.data_width, 32)
+            self.submodules.conv = ClockDomainsRenamer(clock_domain)(stream.Converter(dram_port.data_width, depth))
             self.comb += self.cdc.source.connect(self.conv.sink)
             video_pipe_source = self.conv.source
-        # Elsif DRAM Data Widt < 32-bit or Video clock is slower than sys_clk:
+        # Elsif DRAM Data Width <= depth or Video clock is slower than sys_clk:
         else:
             # Do Data-Width Conversion first...
-            self.submodules.conv = stream.Converter(dram_port.data_width, 32)
+            self.submodules.conv = stream.Converter(dram_port.data_width, depth)
             self.comb += self.dma.source.connect(self.conv.sink)
             # ... and then Clock Domain Crossing.
-            self.submodules.cdc = stream.ClockDomainCrossing([("data", 32)], cd_from="sys", cd_to=clock_domain)
+            self.submodules.cdc = stream.ClockDomainCrossing([("data", depth)], cd_from="sys", cd_to=clock_domain)
             self.comb += self.conv.source.connect(self.cdc.sink)
-            self.comb += If(dram_port.data_width < 32, # FIXME.
+            self.comb += If((dram_port.data_width < depth) and (depth == 32), # FIXME.
                 self.cdc.sink.data[ 0: 8].eq(self.conv.source.data[16:24]),
                 self.cdc.sink.data[16:24].eq(self.conv.source.data[ 0: 8]),
             )
@@ -655,9 +660,15 @@ class VideoFrameBuffer(Module, AutoCSR):
 
             ),
             vtg_sink.connect(source, keep={"de", "hsync", "vsync"}),
-            source.r.eq(video_pipe_source.data[16:24]),
-            source.g.eq(video_pipe_source.data[ 8:16]),
-            source.b.eq(video_pipe_source.data[ 0: 8]),
+            If(depth == 32,
+               source.r.eq(video_pipe_source.data[16:24]),
+               source.g.eq(video_pipe_source.data[ 8:16]),
+               source.b.eq(video_pipe_source.data[ 0: 8]),
+            ).Else( # depth == 16
+                source.r.eq(Cat(Signal(3, reset = 0), video_pipe_source.data[ 0: 5])),
+                source.g.eq(Cat(Signal(2, reset = 0), video_pipe_source.data[ 5:11])),
+                source.b.eq(Cat(Signal(3, reset = 0), video_pipe_source.data[11:16])),
+            )
         ]
 
         # Underflow.
@@ -732,6 +743,38 @@ class VideoHDMI10to1Serializer(Module):
             i2  = self.gearbox.source.data[1],
             o   = data_o,
         )
+
+class VideoHDMIPHY(Module):
+    def __init__(self, pads, clock_domain="sys", pn_swap=[]):
+        self.sink = sink = stream.Endpoint(video_data_layout)
+
+        # # #
+
+        # Always ack Sink, no backpressure.
+        self.comb += sink.ready.eq(1)
+
+        # Clocking + Pseudo Differential Signaling.
+        self.specials += DDROutput(i1=1, i2=0, o=pads.clk_p, clk=ClockSignal(clock_domain))
+
+        # Encode/Serialize Datas.
+        for color in ["r", "g", "b"]:
+
+            # TMDS Encoding.
+            encoder = ClockDomainsRenamer(clock_domain)(TMDSEncoder())
+            setattr(self.submodules, f"{color}_encoder", encoder)
+            self.comb += encoder.d.eq(getattr(sink, color))
+            self.comb += encoder.c.eq(Cat(sink.hsync, sink.vsync) if color == "r" else 0)
+            self.comb += encoder.de.eq(sink.de)
+
+            # 10:1 Serialization + Pseudo Differential Signaling.
+            c2d  = {"r": 0, "g": 1, "b": 2}
+            data = encoder.out if color not in pn_swap else ~encoder.out
+            serializer = VideoHDMI10to1Serializer(
+                data_i       = data,
+                data_o       = getattr(pads, f"data{c2d[color]}_p"),
+                clock_domain = clock_domain,
+            )
+            setattr(self.submodules, f"{color}_serializer", serializer)
 
 # HDMI (Xilinx Spartan6).
 
@@ -926,36 +969,3 @@ class VideoS7GTPHDMIPHY(Module):
             setattr(self.submodules, f"gtp{color}", gtp)
             self.comb += gtp.tx_produce_pattern.eq(1)
             self.comb += gtp.tx_pattern.eq(cdc.source.data)
-
-# HDMI (Lattice ECP5).
-
-class VideoECP5HDMIPHY(Module):
-    def __init__(self, pads, clock_domain="sys"):
-        self.sink = sink = stream.Endpoint(video_data_layout)
-
-        # # #
-
-        # Always ack Sink, no backpressure.
-        self.comb += sink.ready.eq(1)
-
-        # Clocking + Pseudo Differential Signaling.
-        self.specials += DDROutput(i1=1, i2=0, o=pads.clk_p, clk=ClockSignal(clock_domain))
-
-        # Encode/Serialize Datas.
-        for color in ["r", "g", "b"]:
-
-            # TMDS Encoding.
-            encoder = ClockDomainsRenamer(clock_domain)(TMDSEncoder())
-            setattr(self.submodules, f"{color}_encoder", encoder)
-            self.comb += encoder.d.eq(getattr(sink, color))
-            self.comb += encoder.c.eq(Cat(sink.hsync, sink.vsync) if color == "r" else 0)
-            self.comb += encoder.de.eq(sink.de)
-
-            # 10:1 Serialization + Pseudo Differential Signaling.
-            c2d   = {"r": 0, "g": 1, "b": 2}
-            serializer = VideoHDMI10to1Serializer(
-                data_i       = encoder.out,
-                data_o       = getattr(pads, f"data{c2d[color]}_p"),
-                clock_domain = clock_domain,
-            )
-            setattr(self.submodules, f"{color}_serializer", serializer)

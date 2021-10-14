@@ -170,6 +170,7 @@ class Packetizer(Module):
         bytes_per_clk   = data_width//8
         header_words    = (header.length*8)//data_width
         header_leftover = header.length%bytes_per_clk
+        aligned         = header_leftover == 0
 
         # Signals.
         sr       = Signal(header.length*8, reset_less=True)
@@ -208,11 +209,7 @@ class Packetizer(Module):
                     sr_load.eq(1),
                     NextValue(fsm_from_idle, 1),
                     If(header_words == 1,
-                        If(header_leftover != 0,
-                            NextState("UNALIGNED-DATA-COPY")
-                        ).Else(
-                            NextState("ALIGNED-DATA-COPY")
-                        )
+                        NextState("ALIGNED-DATA-COPY" if aligned else "UNALIGNED-DATA-COPY")
                     ).Else(
                         NextState("HEADER-SEND")
                     )
@@ -227,12 +224,8 @@ class Packetizer(Module):
                 sr_shift.eq(1),
                 If(count == (header_words - 1),
                     sr_shift.eq(0),
-                    If(header_leftover,
-                        NextState("UNALIGNED-DATA-COPY"),
-                        NextValue(count, count + 1)
-                    ).Else(
-                        NextState("ALIGNED-DATA-COPY")
-                    )
+                    NextState("ALIGNED-DATA-COPY" if aligned else "UNALIGNED-DATA-COPY"),
+                    NextValue(count, count + 1)
                ).Else(
                     NextValue(count, count + 1),
                )
@@ -251,26 +244,27 @@ class Packetizer(Module):
                )
             )
         )
-        header_offset_multiplier = 1 if header_words == 1 else 2
-        self.sync += If(source.ready, sink_d.eq(sink))
-        fsm.act("UNALIGNED-DATA-COPY",
-            source.valid.eq(sink.valid | sink_d.last),
-            source.last.eq(sink_d.last),
-            source_last_be.eq(last_be_d),
-            If(fsm_from_idle,
-                source.data[:max(header_leftover*8, 1)].eq(sr[min(header_offset_multiplier*data_width, len(sr)-1):])
-            ).Else(
-                source.data[:max(header_leftover*8, 1)].eq(sink_d.data[min((bytes_per_clk-header_leftover)*8, data_width-1):])
-            ),
-            source.data[header_leftover*8:].eq(sink.data),
-            If(source.valid & source.ready,
-                sink.ready.eq(~source.last),
-                NextValue(fsm_from_idle, 0),
-                If(source.last,
-                    NextState("IDLE")
+        if not aligned:
+            header_offset_multiplier = 1 if header_words == 1 else 2
+            self.sync += If(source.ready, sink_d.eq(sink))
+            fsm.act("UNALIGNED-DATA-COPY",
+                source.valid.eq(sink.valid | sink_d.last),
+                source.last.eq(sink_d.last),
+                source_last_be.eq(last_be_d),
+                If(fsm_from_idle,
+                    source.data[:max(header_leftover*8, 1)].eq(sr[min(header_offset_multiplier*data_width, len(sr)-1):])
+                ).Else(
+                    source.data[:max(header_leftover*8, 1)].eq(sink_d.data[min((bytes_per_clk-header_leftover)*8, data_width-1):])
+                ),
+                source.data[header_leftover*8:].eq(sink.data),
+                If(source.valid & source.ready,
+                    sink.ready.eq(~source.last),
+                    NextValue(fsm_from_idle, 0),
+                    If(source.last,
+                        NextState("IDLE")
+                    )
                 )
             )
-        )
 
         # Error.
         if hasattr(sink, "error") and hasattr(source, "error"):
@@ -291,6 +285,7 @@ class Depacketizer(Module):
         bytes_per_clk   = data_width//8
         header_words    = (header.length*8)//data_width
         header_leftover = header.length%bytes_per_clk
+        aligned         = header_leftover == 0
 
         # Signals.
         sr                = Signal(header.length*8, reset_less=True)
@@ -320,11 +315,7 @@ class Depacketizer(Module):
                 sr_shift.eq(1),
                 NextValue(fsm_from_idle, 1),
                 If(header_words == 1,
-                    If(header_leftover,
-                        NextState("UNALIGNED-DATA-COPY")
-                    ).Else(
-                        NextState("ALIGNED-DATA-COPY")
-                    ),
+                    NextState("ALIGNED-DATA-COPY" if aligned else "UNALIGNED-DATA-COPY"),
                 ).Else(
                     NextState("HEADER-RECEIVE")
                 )
@@ -336,33 +327,8 @@ class Depacketizer(Module):
                 NextValue(count, count + 1),
                 sr_shift.eq(1),
                 If(count == (header_words - 1),
-                    If(header_leftover,
-                        NextValue(count, count + 1),
-                        NextState("UNALIGNED-DATA-COPY")
-                    ).Else(
-                        NextState("ALIGNED-DATA-COPY")
-                    )
-                )
-            )
-        )
-        self.sync += If(sink.valid & sink.ready, sink_d.eq(sink))
-        fsm.act("UNALIGNED-DATA-COPY",
-            source.valid.eq(sink.valid | sink_d.last),
-            source.last.eq(sink.last | sink_d.last),
-            sink.ready.eq(source.ready),
-            source.data.eq(sink_d.data[header_leftover*8:]),
-            source.data[min((bytes_per_clk-header_leftover)*8, data_width-1):].eq(sink.data),
-            If(fsm_from_idle,
-                source.valid.eq(sink_d.last),
-                sink.ready.eq(1),
-                If(sink.valid,
-                    NextValue(fsm_from_idle, 0),
-                    sr_shift_leftover.eq(1),
-                )
-            ),
-            If(source.valid & source.ready,
-                If(source.last,
-                    NextState("IDLE")
+                    NextState("ALIGNED-DATA-COPY" if aligned else "UNALIGNED-DATA-COPY"),
+                    NextValue(count, count + 1),
                 )
             )
         )
@@ -378,6 +344,29 @@ class Depacketizer(Module):
             )
         )
 
+        if not aligned:
+            self.sync += If(sink.valid & sink.ready, sink_d.eq(sink))
+            fsm.act("UNALIGNED-DATA-COPY",
+                source.valid.eq(sink.valid | sink_d.last),
+                source.last.eq(sink.last | sink_d.last),
+                sink.ready.eq(source.ready),
+                source.data.eq(sink_d.data[header_leftover*8:]),
+                source.data[min((bytes_per_clk-header_leftover)*8, data_width-1):].eq(sink.data),
+                If(fsm_from_idle,
+                    source.valid.eq(sink_d.last),
+                    sink.ready.eq(1),
+                    If(sink.valid,
+                        NextValue(fsm_from_idle, 0),
+                        sr_shift_leftover.eq(1),
+                    )
+                ),
+                If(source.valid & source.ready,
+                    If(source.last,
+                        NextState("IDLE")
+                    )
+                )
+            )
+
         # Error.
         if hasattr(sink, "error") and hasattr(source, "error"):
             self.comb += source.error.eq(sink.error)
@@ -391,30 +380,39 @@ class Depacketizer(Module):
 # PacketFIFO ---------------------------------------------------------------------------------------
 
 class PacketFIFO(Module):
-    def __init__(self, description, depth, buffered=False):
-        self.sink   = sink   = stream.Endpoint(description)
-        self.source = source = stream.Endpoint(description)
+    def __init__(self, layout, payload_depth, param_depth=None, buffered=False):
+        self.sink   = sink   = stream.Endpoint(layout)
+        self.source = source = stream.Endpoint(layout)
 
         # # #
 
-        # Create the FIFO.
-        self.submodules.fifo = fifo = stream.SyncFIFO(description, depth, buffered)
+        # Parameters.
+        param_layout   = sink.description.param_layout
+        payload_layout = sink.description.payload_layout
+        if param_layout == []:
+            param_layout = [("dummy", 1)]
+        if param_depth is None:
+            param_depth = payload_depth
 
-        # Connect our sink to FIFO.sink.
-        self.comb += sink.connect(fifo.sink)
+        # Create the FIFOs.
+        payload_description = stream.EndpointDescription(payload_layout=payload_layout)
+        param_description   = stream.EndpointDescription(param_layout=param_layout)
+        self.submodules.payload_fifo = payload_fifo = stream.SyncFIFO(payload_description, payload_depth, buffered)
+        self.submodules.param_fifo   = param_fifo   = stream.SyncFIFO(param_description,   param_depth,   buffered)
 
-        # Count packets in the FIFO.
-        count = Signal(int(log2(depth))+1)
-        inc   = (sink.valid   &   sink.ready &   sink.last)
-        dec   = (source.valid & source.ready & source.last)
-        self.sync += If(inc & ~dec, count.eq(count + 1))
-        self.sync += If(~inc & dec, count.eq(count - 1))
-
-        # Connect FIFO.sink to source only we have at least one packet in the FIFO.
+        # Connect Sink to FIFOs.
         self.comb += [
-            fifo.source.connect(source, omit={"valid", "ready"}),
-            If(count > 0,
-                source.valid.eq(1),
-                fifo.source.ready.eq(source.ready)
-            )
+            sink.connect(param_fifo.sink,   keep=set([e[0] for e in param_layout])),
+            sink.connect(payload_fifo.sink, keep=set([e[0] for e in payload_layout] + ["last"])),
+            param_fifo.sink.valid.eq(sink.valid & sink.last),
+            payload_fifo.sink.valid.eq(sink.valid & payload_fifo.sink.ready),
+            sink.ready.eq(param_fifo.sink.ready & payload_fifo.sink.ready),
+        ]
+
+        # Connect FIFOs to Source.
+        self.comb += [
+            param_fifo.source.connect(source,   omit={"last",  "ready", "dummy"}),
+            payload_fifo.source.connect(source, omit={"valid", "ready"}),
+            param_fifo.source.ready.eq(  source.valid & source.last & source.ready),
+            payload_fifo.source.ready.eq(source.valid &               source.ready),
         ]

@@ -92,10 +92,10 @@ def connect_to_pads(bus, pads, mode="master", axi_full=False):
     }
     for channel, mode in channel_modes.items():
         ch = getattr(bus, channel)
-        for name, width in (
-            [("valid", 1)] +
-            [("last",  1)] if (ch in ["w", "r"] and axi_full) else [] +
-            ch.description.payload_layout):
+        sig_list = [("valid", 1)] + ch.description.payload_layout
+        if ch in ["w", "r"] and axi_full:
+            sig_list += [("last",  1)]
+        for name, width in sig_list:
             sig  = getattr(ch, name)
             pad  = getattr(pads, channel + name)
             if mode == "master":
@@ -317,7 +317,7 @@ class AXIBurst2Beat(Module):
 
         beat_count  = Signal(8)
         beat_size   = Signal(8 + 4)
-        beat_offset = Signal(8 + 4)
+        beat_offset = Signal((8 + 4, True))
         beat_wrap   = Signal(8 + 4)
 
         # Compute parameters
@@ -352,8 +352,8 @@ class AXIBurst2Beat(Module):
                     )
                 ),
                 If((ax_burst.burst == BURST_WRAP) & (BURST_WRAP in capabilities),
-                    If(beat_offset == beat_wrap,
-                        beat_offset.eq(0)
+                    If((ax_beat.addr & beat_wrap) == beat_wrap,
+                        beat_offset.eq(beat_offset - beat_wrap)
                     )
                 )
             )
@@ -783,7 +783,7 @@ class AXILite2CSR(Module):
 # AXILite SRAM -------------------------------------------------------------------------------------
 
 class AXILiteSRAM(Module):
-    def __init__(self, mem_or_size, read_only=None, init=None, bus=None):
+    def __init__(self, mem_or_size, read_only=None, init=None, bus=None, no_we=False):
         if bus is None:
             bus = AXILiteInterface()
         self.bus = bus

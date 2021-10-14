@@ -107,19 +107,11 @@ def _run_script(script):
 
 class LatticeOxideToolchain:
     attr_translate = {
-        # FIXME: document
         "keep": ("keep", "true"),
-        "no_retiming":      None,
-        "async_reg":        None,
-        "mr_ff":            None,
-        "mr_false_path":    None,
-        "ars_ff1":          None,
-        "ars_ff2":          None,
-        "ars_false_path":   None,
-        "no_shreg_extract": None
+        "syn_useioff": ("syn_useioff", 1),
     }
 
-    special_overrides = common.lattice_NX_special_overrides
+    special_overrides = common.lattice_NX_special_overrides_for_oxide
 
     def __init__(self):
         self.yosys_template   = _yosys_template

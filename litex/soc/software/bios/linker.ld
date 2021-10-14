@@ -41,6 +41,13 @@ SECTIONS
 		PROVIDE_HIDDEN (__bios_cmd_end = .);
 	} > rom
 
+	.init :
+	{
+		PROVIDE_HIDDEN (__bios_init_start = .);
+		KEEP(*(.bios_init))
+		PROVIDE_HIDDEN (__bios_init_end = .);
+	} > rom
+
 	.data :
 	{
 		. = ALIGN(8);
@@ -78,7 +85,7 @@ SECTIONS
 	}
 }
 
-PROVIDE(_fstack = ORIGIN(sram) + LENGTH(sram) - 8);
+PROVIDE(_fstack = ORIGIN(sram) + LENGTH(sram));
 
 PROVIDE(_fdata_rom = LOADADDR(.data));
 PROVIDE(_edata_rom = LOADADDR(.data) + SIZEOF(.data));

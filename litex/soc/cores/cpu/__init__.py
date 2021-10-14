@@ -19,7 +19,7 @@ class CPU(Module):
     clang_flags          = None
     linker_output_format = None
     interrupts           = {}
-    mem_map              = {}
+    mem_map              = {"csr": 0x82000000}
     io_regions           = {}
     use_rom              = False
 
@@ -34,7 +34,7 @@ class CPUNone(CPU):
     io_regions           = {0x00000000: 0x100000000} # origin, length
     periph_buses         = []
     memory_buses         = []
-    mem_map              = {"csr": 0x00000000}
+    mem_map              = {"csr": 0x00000000, "ethmac": 0x00020000} # FIXME: remove ethmac.
 
 CPU_GCC_TRIPLE_RISCV32 = (
     "riscv64-unknown-elf",

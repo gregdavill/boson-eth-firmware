@@ -42,11 +42,11 @@ class RS232ClkPhaseAccum(Module):
     def __init__(self, tuning_word, mode="tx"):
         assert mode in ["tx", "rx"]
         self.enable = Signal()
-        self.tick   = Signal(32)
+        self.tick   = Signal()
 
         # # #
 
-        phase = Signal(32)
+        phase = Signal(32, reset_less=True)
         self.sync += Cat(phase, self.tick).eq(tuning_word if mode == "tx" else 2**31)
         self.sync += If(self.enable, Cat(phase, self.tick).eq(phase + tuning_word))
 
@@ -56,6 +56,8 @@ class RS232PHYTX(Module):
         self.sink = sink = stream.Endpoint([("data", 8)])
 
         # # #
+
+        pads.tx.reset = 1
 
         data  = Signal(8, reset_less=True)
         count = Signal(4, reset_less=True)

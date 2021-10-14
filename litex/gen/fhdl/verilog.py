@@ -22,7 +22,9 @@ from migen.fhdl.structure import _Operator, _Slice, _Assign, _Fragment
 from migen.fhdl.tools import *
 from migen.fhdl.namer import build_namespace
 from migen.fhdl.conv_output import ConvOutput
+from migen.fhdl.specials import Memory
 
+from litex.gen.fhdl.memory import memory_emit_verilog
 from litex.build.tools import generated_banner
 
 
@@ -205,7 +207,7 @@ def _printattr(attr, attr_translate):
             attr_name, attr_value = attr
         else:
             # translated attribute
-            at = attr_translate[attr]
+            at = attr_translate.get(attr, None)
             if at is None:
                 continue
             attr_name, attr_value = at
@@ -236,6 +238,7 @@ def _printheader(f, ios, name, ns, attr_translate,
         if attr:
             r += "\t" + attr
         sig.type = "wire"
+        sig.name = ns.get_name(sig)
         if sig in inouts:
             sig.direction = "inout"
             r += "\tinout wire " + _printsig(ns, sig)
@@ -362,14 +365,18 @@ def _printspecials(overrides, specials, ns, add_data_file, attr_translate):
             attr = _printattr(special.attr, attr_translate)
             if attr:
                 r += attr + " "
-        pr = call_special_classmethod(overrides, special, "emit_verilog", ns, add_data_file)
+        # Replace Migen Memory's emit_verilog with our implementation.
+        if isinstance(special, Memory):
+            pr = memory_emit_verilog(special, ns, add_data_file)
+        else:
+            pr = call_special_classmethod(overrides, special, "emit_verilog", ns, add_data_file)
         if pr is None:
             raise NotImplementedError("Special " + str(special) + " failed to implement emit_verilog")
         r += pr
     return r
 
 
-class DummyAttrTranslate:
+class DummyAttrTranslate(dict):
     def __getitem__(self, k):
         return (k, "true")
 

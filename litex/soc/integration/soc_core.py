@@ -56,7 +56,6 @@ class SoCCore(LiteXSoC):
         "rom":      0x00000000,
         "sram":     0x01000000,
         "main_ram": 0x40000000,
-        "csr":      0x82000000,
     }
 
     def __init__(self, platform, clk_freq,
@@ -80,14 +79,17 @@ class SoCCore(LiteXSoC):
         integrated_rom_size      = 0,
         integrated_rom_mode      = "r",
         integrated_rom_init      = [],
+        integrated_rom_no_we     = False,
 
         # SRAM parameters
         integrated_sram_size     = 0x2000,
         integrated_sram_init     = [],
+        integrated_sram_no_we    = False,
 
         # MAIN_RAM parameters
-        integrated_main_ram_size = 0,
-        integrated_main_ram_init = [],
+        integrated_main_ram_size  = 0,
+        integrated_main_ram_init  = [],
+        integrated_main_ram_no_we = False,
 
         # CSR parameters
         csr_data_width           = 32,
@@ -198,15 +200,30 @@ class SoCCore(LiteXSoC):
 
         # Add integrated ROM
         if integrated_rom_size:
-            self.add_rom("rom", self.cpu.reset_address, integrated_rom_size, integrated_rom_init, integrated_rom_mode)
+            self.add_rom("rom",
+                origin   = self.cpu.reset_address,
+                size     = integrated_rom_size,
+                contents = integrated_rom_init,
+                mode     = integrated_rom_mode,
+                no_we    = integrated_rom_no_we
+            )
 
         # Add integrated SRAM
         if integrated_sram_size:
-            self.add_ram("sram", self.mem_map["sram"], integrated_sram_size)
+            self.add_ram("sram",
+                origin = self.mem_map["sram"],
+                size   = integrated_sram_size,
+                no_we  = integrated_sram_no_we
+            )
 
         # Add integrated MAIN_RAM (only useful when no external SRAM/SDRAM is available)
         if integrated_main_ram_size:
-            self.add_ram("main_ram", self.mem_map["main_ram"], integrated_main_ram_size, integrated_main_ram_init)
+            self.add_ram("main_ram",
+                origin   = self.mem_map["main_ram"],
+                size     = integrated_main_ram_size,
+                contents = integrated_main_ram_init,
+                no_we    = integrated_main_ram_no_we
+            )
 
         # Add Identifier
         if ident != "":
@@ -337,7 +354,7 @@ def soc_core_args(parser):
 
 def soc_core_argdict(args):
     r = dict()
-    for a in inspect.getargspec(SoCCore.__init__).args:
+    for a in inspect.getfullargspec(SoCCore.__init__).args:
         if a not in ["self", "platform"]:
             if a in ["with_uart", "with_timer", "with_ctrl"]:
                 arg = not getattr(args, a.replace("with", "no"), True)

@@ -6,6 +6,8 @@
 # Copyright (c) 2018 Tim 'mithro' Ansell <me@mith.ro>
 # SPDX-License-Identifier: BSD-2-Clause
 
+"""Wishbone Classic support for LiteX (Standard HandShaking/Synchronous Feedback)"""
+
 from math import log2
 
 from functools import reduce
@@ -327,7 +329,7 @@ class Converter(Module):
 # Wishbone SRAM ------------------------------------------------------------------------------------
 
 class SRAM(Module):
-    def __init__(self, mem_or_size, read_only=None, init=None, bus=None):
+    def __init__(self, mem_or_size, read_only=None, init=None, bus=None, no_we=False):
         if bus is None:
             bus = Interface()
         self.bus = bus
@@ -336,7 +338,13 @@ class SRAM(Module):
             assert(mem_or_size.width <= bus_data_width)
             self.mem = mem_or_size
         else:
-            self.mem = Memory(bus_data_width, mem_or_size//(bus_data_width//8), init=init)
+            if no_we:
+                # FIXME: Cleanup/Improve integration.
+                from litex.build.efinix.memory import Memory as NoWeMemory
+                self.mem = NoWeMemory(bus_data_width, mem_or_size//(bus_data_width//8), init=init)
+            else:
+                self.mem = Memory(bus_data_width, mem_or_size//(bus_data_width//8), init=init)
+
         if read_only is None:
             if hasattr(self.mem, "bus_read_only"):
                 read_only = self.mem.bus_read_only

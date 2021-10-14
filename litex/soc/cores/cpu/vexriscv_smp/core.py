@@ -30,6 +30,7 @@ CPU_VARIANTS = {
 # VexRiscv SMP -------------------------------------------------------------------------------------
 
 class VexRiscvSMP(CPU):
+    family               = "riscv"
     name                 = "vexriscv"
     human_name           = "VexRiscv SMP"
     variants             = CPU_VARIANTS
@@ -56,6 +57,8 @@ class VexRiscvSMP(CPU):
     with_fpu             = False
     cpu_per_fpu          = 4
     with_rvc             = False
+    dtlb_size            = 4
+    itlb_size            = 4
 
     # Command line configuration arguments.
     @staticmethod
@@ -75,6 +78,8 @@ class VexRiscvSMP(CPU):
         parser.add_argument("--with-fpu"                    , action="store_true", help="Enable the F32/F64 FPU")
         parser.add_argument("--cpu-per-fpu"                 , default="4",         help="Maximal ratio between CPU count and FPU count. Will instanciate as many FPU as necessary.")
         parser.add_argument("--with-rvc"                    , action="store_true", help="Enable RISC-V compressed instruction support")
+        parser.add_argument("--dtlb-size",                    default=4,           help="Data TLB size.")
+        parser.add_argument("--itlb-size",                    default=4,           help="Instruction TLB size.")
 
     @staticmethod
     def args_read(args):
@@ -105,7 +110,9 @@ class VexRiscvSMP(CPU):
         if(args.cpu_per_fpu):
             VexRiscvSMP.cpu_per_fpu = args.cpu_per_fpu
         if(args.with_rvc):
-            VexRiscvSMP.with_rvc     = True
+            VexRiscvSMP.with_rvc = True
+        if(args.dtlb_size): VexRiscvSMP.dtlb_size = int(args.dtlb_size)
+        if(args.itlb_size): VexRiscvSMP.itlb_size = int(args.itlb_size)
 
     # ABI.
     @staticmethod
@@ -159,6 +166,9 @@ class VexRiscvSMP(CPU):
         f"Dw{VexRiscvSMP.dcache_width}" \
         f"Ds{VexRiscvSMP.dcache_size}"  \
         f"Dy{VexRiscvSMP.dcache_ways}"  \
+        "_" \
+        f"ITs{VexRiscvSMP.itlb_size}" \
+        f"DTs{VexRiscvSMP.dtlb_size}" \
         f"{'_'+ldw if not VexRiscvSMP.wishbone_memory  else ''}" \
         f"{'_Cdma' if VexRiscvSMP.coherent_dma         else ''}" \
         f"{'_Aes'  if VexRiscvSMP.aes_instruction      else ''}" \
@@ -250,6 +260,8 @@ class VexRiscvSMP(CPU):
         gen_args.append(f"--rvc={VexRiscvSMP.with_rvc}")
         gen_args.append(f"--netlist-name={VexRiscvSMP.cluster_name}")
         gen_args.append(f"--netlist-directory={vdir}")
+        gen_args.append(f"--dtlb-size={VexRiscvSMP.dtlb_size}")
+        gen_args.append(f"--itlb-size={VexRiscvSMP.itlb_size}")
 
         cmd = 'cd {path} && sbt "runMain vexriscv.demo.smp.VexRiscvLitexSmpClusterCmdGen {args}"'.format(path=os.path.join(vdir, "ext", "VexRiscv"), args=" ".join(gen_args))
         if os.system(cmd) != 0:
@@ -361,6 +373,23 @@ class VexRiscvSMP(CPU):
         # Define number of CPUs
         soc.add_config("CPU_COUNT", VexRiscvSMP.cpu_count)
         soc.add_constant("CPU_ISA", VexRiscvSMP.get_arch())
+        # Constants for cache so we can add them in the DTS.
+        if (VexRiscvSMP.dcache_size > 0):
+            soc.add_constant("cpu_dcache_size", VexRiscvSMP.dcache_size)
+            soc.add_constant("cpu_dcache_ways", VexRiscvSMP.dcache_ways)
+            soc.add_constant("cpu_dcache_block_size", 64) # hardwired?
+        if (VexRiscvSMP.icache_size > 0):
+            soc.add_constant("cpu_icache_size", VexRiscvSMP.icache_size)
+            soc.add_constant("cpu_icache_ways", VexRiscvSMP.icache_ways)
+            soc.add_constant("cpu_icache_block_size", 64) # hardwired?
+        # Constants for TLB so we can add them in the DTS
+        # full associative so only the size is described.
+        if (VexRiscvSMP.dtlb_size > 0):
+            soc.add_constant("cpu_dtlb_size", VexRiscvSMP.dtlb_size)
+            soc.add_constant("cpu_dtlb_ways", VexRiscvSMP.dtlb_size)
+        if (VexRiscvSMP.itlb_size > 0):
+            soc.add_constant("cpu_itlb_size", VexRiscvSMP.itlb_size)
+            soc.add_constant("cpu_itlb_ways", VexRiscvSMP.itlb_size)
 
         # Add PLIC as Bus Slave
         self.plicbus = plicbus  = wishbone.Interface()
@@ -390,8 +419,6 @@ class VexRiscvSMP(CPU):
 
     def add_memory_buses(self, address_width, data_width):
         VexRiscvSMP.litedram_width = data_width
-
-        VexRiscvSMP.generate_cluster_name()
 
         from litedram.common import LiteDRAMNativePort
         if(not VexRiscvSMP.wishbone_memory):
@@ -429,6 +456,7 @@ class VexRiscvSMP(CPU):
 
     def do_finalize(self):
         assert hasattr(self, "reset_address")
+        VexRiscvSMP.generate_cluster_name()
         self.specials += Instance(self.cluster_name, **self.cpu_params)
 
         # Add Verilog sources

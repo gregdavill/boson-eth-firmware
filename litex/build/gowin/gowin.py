@@ -6,16 +6,19 @@
 # SPDX-License-Identifier: BSD-2-Clause
 
 import os
+import math
 import subprocess
 from shutil import which
 
 from migen.fhdl.structure import _Fragment
 
-from litex.build.generic_platform import Pins, IOStandard, Misc
+from litex.build.generic_platform import *
 from litex.build import tools
 
+# Constraints (.cst and .tcl) ----------------------------------------------------------------------
+
 def _build_cst(named_sc, named_pc):
-    lines = []
+    cst = []
 
     flat_sc = []
     for name, pins, other, resource in named_sc:
@@ -27,68 +30,98 @@ def _build_cst(named_sc, named_pc):
 
     for name, pin, other in flat_sc:
         if pin != "X":
-            lines.append(f"IO_LOC \"{name}\" {pin};")
+            cst.append(f"IO_LOC \"{name}\" {pin};")
 
         for c in other:
             if isinstance(c, IOStandard):
-                lines.append(f"IO_PORT \"{name}\" IO_TYPE={c.name};")
+                cst.append(f"IO_PORT \"{name}\" IO_TYPE={c.name};")
             elif isinstance(c, Misc):
-                lines.append(f"IO_PORT \"{name}\" {c.misc};")
+                cst.append(f"IO_PORT \"{name}\" {c.misc};")
 
     if named_pc:
-        lines.extend(named_pc)
+        cst.extend(named_pc)
 
-    cst = "\n".join(lines)
     with open("top.cst", "w") as f:
-        f.write(cst)
+        f.write("\n".join(cst))
 
-def _build_script(name, partnumber, files, options):
-    lines = [
-        f"set_device -name {name} {partnumber}",
-        "add_file top.cst",
-    ]
+def _build_sdc(clocks, vns):
+    sdc = []
+    for clk, period in sorted(clocks.items(), key=lambda x: x[0].duid):
+        sdc.append(f"create_clock -name {vns.get_name(clk)} -period {str(period)} [get_ports {{{vns.get_name(clk)}}}]")
+    with open("top.sdc", "w") as f:
+        f.write("\n".join(sdc))
 
+# Script -------------------------------------------------------------------------------------------
+
+def _build_tcl(name, partnumber, files, options):
+    tcl = []
+
+    # Set Device.
+    tcl.append(f"set_device -name {name} {partnumber}")
+
+    # Add IOs Constraints.
+    tcl.append("add_file top.cst")
+
+    # Add Timings Constraints.
+    tcl.append("add_file top.sdc")
+
+    # Add Sources.
     for f, typ, lib in files:
-        lines.append(f"add_file {f}")
+        tcl.append(f"add_file {f}")
 
+    # Set Options.
     for opt, val in options.items():
-        lines.append(f"set_option -{opt} {val}")
+        tcl.append(f"set_option -{opt} {val}")
 
-    lines.append("run all")
+    # Run.
+    tcl.append("run all")
 
-    tcl = "\n".join(lines)
+    # Generate .tcl.
     with open("run.tcl", "w") as f:
-        f.write(tcl)
+        f.write("\n".join(tcl))
 
-class GowinToolchain():
+# GowinToolchain -----------------------------------------------------------------------------------
 
-    attr_translate = {
-        "keep":             None,
-        "no_retiming":      None,
-        "async_reg":        None,
-        "mr_ff":            None,
-        "mr_false_path":    None,
-        "ars_ff1":          None,
-        "ars_ff2":          None,
-        "ars_false_path":   None,
-        "no_shreg_extract": None
-    }
+class GowinToolchain:
+    attr_translate = {}
 
     def __init__(self):
         self.options = {}
+        self.clocks  = dict()
+
+    def apply_hyperram_integration_hack(self, v_file):
+        # FIXME: Gowin EDA expects a very specific HypeRAM integration pattern, modify generated verilog to match it.
+
+        # Convert to vectors.
+        tools.replace_in_file(v_file, "O_hpram_reset_n", "O_hpram_reset_n[0]")
+        tools.replace_in_file(v_file, "O_hpram_cs_n",    "O_hpram_cs_n[0]")
+        tools.replace_in_file(v_file, "O_hpram_rwds",    "O_hpram_rwds[0]")
+        tools.replace_in_file(v_file, "O_hpram_ck ",     "O_hpram_ck[0] ")
+        tools.replace_in_file(v_file, "O_hpram_ck_n ",   "O_hpram_ck_n[0] ")
+        tools.replace_in_file(v_file, "O_hpram_ck,",     "O_hpram_ck[0],")
+        tools.replace_in_file(v_file, "O_hpram_ck_n,",   "O_hpram_ck_n[0],")
+        tools.replace_in_file(v_file, "wire O_hpram_reset_n[0]", "wire [0:0] O_hpram_reset_n")
+        tools.replace_in_file(v_file, "wire O_hpram_cs_n[0]",    "wire [0:0] O_hpram_cs_n")
+        tools.replace_in_file(v_file, "wire IO_hpram_rwds[0]",   "wire [0:0] IO_hpram_rwds")
+        tools.replace_in_file(v_file, "wire O_hpram_ck[0]",      "wire [0:0] O_hpram_ck")
+        tools.replace_in_file(v_file, "wire O_hpram_ck_n[0]",    "wire [0:0] O_hpram_ck_n")
+
+        # Apply Synthesis directives.
+        tools.replace_in_file(v_file, "wire [0:0] IO_hpram_rwds,", "wire [0:0] IO_hpram_rwds, /* synthesis syn_tristate = 1 */")
+        tools.replace_in_file(v_file, "wire [7:0] IO_hpram_dq,",    "wire [7:0] IO_hpram_dq,  /* synthesis syn_tristate = 1 */")
 
     def build(self, platform, fragment,
-        build_dir      = "build",
-        build_name     = "top",
-        run            = True,
+        build_dir  = "build",
+        build_name = "top",
+        run        = True,
         **kwargs):
 
-        # Create build directory
+        # Create build directory.
         cwd = os.getcwd()
         os.makedirs(build_dir, exist_ok=True)
         os.chdir(build_dir)
-
         # Finalize design
+
         if not isinstance(fragment, _Fragment):
             fragment = fragment.get_fragment()
         platform.finalize(fragment)
@@ -99,21 +132,30 @@ class GowinToolchain():
         v_file = build_name + ".v"
         v_output.write(v_file)
         platform.add_source(v_file)
+        self.apply_hyperram_integration_hack(v_file)
 
         if platform.verilog_include_paths:
-            self.options['include_path'] = '{' + ';'.join(platform.verilog_include_paths) + '}'
+            self.options["include_path"] = "{" + ";".join(platform.verilog_include_paths) + "}"
 
-        # Generate constraints file (.cst)
+        # Generate constraints file.
+        # IOs (.cst).
         _build_cst(
-            named_sc                = named_sc,
-            named_pc                = named_pc)
+            named_sc = named_sc,
+            named_pc = named_pc
+        )
 
-        # Generate TCL build script
-        script = _build_script(
-            name                    = platform.devicename,
-            partnumber              = platform.device,
-            files                   = platform.sources,
-            options                 = self.options)
+        # Timings (.sdc)
+        _build_sdc(
+            clocks  = self.clocks,
+            vns     = v_output.ns
+        )
+
+        # Generate build script (.tcl)
+        script = _build_tcl(
+            name       = platform.devicename,
+            partnumber = platform.device,
+            files      = platform.sources,
+            options    = self.options)
 
         # Run
         if run:
@@ -128,3 +170,12 @@ class GowinToolchain():
         os.chdir(cwd)
 
         return v_output.ns
+
+    def add_period_constraint(self, platform, clk, period):
+        clk.attr.add("keep")
+        period = math.floor(period*1e3)/1e3 # round to lowest picosecond
+        if clk in self.clocks:
+            if period != self.clocks[clk]:
+                raise ValueError("Clock already constrained to {:.2f}ns, new constraint to {:.2f}ns"
+                    .format(self.clocks[clk], period))
+        self.clocks[clk] = period

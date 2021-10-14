@@ -104,7 +104,7 @@ static inline uint32_t pow2_round_up(uint32_t r) {
 	return r;
 }
 
-void sdcard_set_clk_freq(uint32_t clk_freq, int show) {
+void sdcard_set_clk_freq(unsigned long clk_freq, int show) {
 	uint32_t divider;
 	divider = clk_freq ? CONFIG_CLOCK_FREQUENCY/clk_freq : 256;
 	divider = pow2_round_up(divider);
@@ -117,9 +117,9 @@ void sdcard_set_clk_freq(uint32_t clk_freq, int show) {
 		clk_freq = CONFIG_CLOCK_FREQUENCY/divider;
 		printf("Setting SDCard clk freq to ");
 		if (clk_freq > 1000000)
-			printf("%d MHz\n", clk_freq/1000000);
+			printf("%ld MHz\n", clk_freq/1000000);
 		else
-			printf("%d KHz\n", clk_freq/1000);
+			printf("%ld KHz\n", clk_freq/1000);
 	}
 	sdphy_clocker_divider_write(divider);
 }
@@ -565,19 +565,19 @@ void sdcard_write(uint32_t block, uint32_t count, uint8_t* buf)
 
 static DSTATUS sdcardstatus = STA_NOINIT;
 
-DSTATUS disk_status(uint8_t drv) {
+DSTATUS disk_status(BYTE drv) {
 	if (drv) return STA_NOINIT;
 	return sdcardstatus;
 }
 
-DSTATUS disk_initialize(uint8_t drv) {
+DSTATUS disk_initialize(BYTE drv) {
 	if (drv) return STA_NOINIT;
 	if (sdcardstatus)
 		sdcardstatus = sdcard_init() ? 0 : STA_NOINIT;
 	return sdcardstatus;
 }
 
-DRESULT disk_read(uint8_t drv, uint8_t *buf, uint32_t block, uint32_t count) {
+DRESULT disk_read(BYTE drv, BYTE *buf, LBA_t block, UINT count) {
 	sdcard_read(block, count, buf);
 	return RES_OK;
 }

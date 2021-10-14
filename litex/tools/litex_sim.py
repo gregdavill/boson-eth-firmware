@@ -22,13 +22,17 @@ from litex.soc.integration.soc_core import *
 from litex.soc.integration.builder import *
 from litex.soc.integration.soc import *
 from litex.soc.cores.bitbang import *
+from litex.soc.cores.gpio import GPIOTristate
 from litex.soc.cores.cpu import CPUS
+
 
 from litedram import modules as litedram_modules
 from litedram.modules import parse_spd_hexdump
-from litedram.common import *
+from litedram.phy.model import sdram_module_nphases, get_sdram_phy_settings
 from litedram.phy.model import SDRAMPHYModel
 
+from liteeth.phy.gmii import LiteEthPHYGMII
+from liteeth.phy.xgmii import LiteEthPHYXGMII
 from liteeth.phy.model import LiteEthPHYModel
 from liteeth.mac import LiteEthMAC
 from liteeth.core.arp import LiteEthARP
@@ -68,11 +72,45 @@ _io = [
         Subsignal("sink_ready",   Pins(1)),
         Subsignal("sink_data",    Pins(8)),
     ),
+    ("xgmii_eth", 0,
+        Subsignal("rx_data",      Pins(64)),
+        Subsignal("rx_ctl",       Pins(8)),
+        Subsignal("tx_data",      Pins(64)),
+        Subsignal("tx_ctl",       Pins(8)),
+    ),
+    ("gmii_eth", 0,
+        Subsignal("rx_data",      Pins(8)),
+        Subsignal("rx_dv",        Pins(1)),
+        Subsignal("rx_er",        Pins(1)),
+        Subsignal("tx_data",      Pins(8)),
+        Subsignal("tx_en",        Pins(1)),
+        Subsignal("tx_er",        Pins(1)),
+    ),
     ("i2c", 0,
         Subsignal("scl",     Pins(1)),
         Subsignal("sda_out", Pins(1)),
         Subsignal("sda_in",  Pins(1)),
     ),
+    ("spiflash", 0,
+        Subsignal("cs_n", Pins(1)),
+        Subsignal("clk",  Pins(1)),
+        Subsignal("mosi", Pins(1)),
+        Subsignal("miso", Pins(1)),
+        Subsignal("wp",   Pins(1)),
+        Subsignal("hold", Pins(1)),
+    ),
+    ("spiflash4x", 0,
+        Subsignal("cs_n", Pins(1)),
+        Subsignal("clk",  Pins(1)),
+        Subsignal("dq",   Pins(4)),
+    ),
+    # Simulated tristate IO (Verilator does not support top-level
+    # tristate signals)
+    ("gpio", 0,
+        Subsignal("oe",   Pins(32)),
+        Subsignal("o",    Pins(32)),
+        Subsignal("i",    Pins(32)),
+    )
 ]
 
 # Platform -----------------------------------------------------------------------------------------
@@ -81,81 +119,14 @@ class Platform(SimPlatform):
     def __init__(self):
         SimPlatform.__init__(self, "SIM", _io)
 
-# DFI PHY model settings ---------------------------------------------------------------------------
-
-sdram_module_nphases = {
-    "SDR":   1,
-    "DDR":   2,
-    "LPDDR": 2,
-    "DDR2":  2,
-    "DDR3":  4,
-    "DDR4":  4,
-}
-
-def get_sdram_phy_settings(memtype, data_width, clk_freq):
-    nphases = sdram_module_nphases[memtype]
-
-    if memtype == "SDR":
-        # Settings from gensdrphy
-        rdphase       = 0
-        wrphase       = 0
-        cl            = 2
-        cwl           = None
-        read_latency  = 4
-        write_latency = 0
-    elif memtype in ["DDR", "LPDDR"]:
-        # Settings from s6ddrphy
-        rdphase       = 0
-        wrphase       = 1
-        cl            = 3
-        cwl           = None
-        read_latency  = 5
-        write_latency = 0
-    elif memtype in ["DDR2", "DDR3"]:
-        # Settings from s7ddrphy
-        tck             = 2/(2*nphases*clk_freq)
-        cl, cwl         = get_default_cl_cwl(memtype, tck)
-        cl_sys_latency  = get_sys_latency(nphases, cl)
-        cwl_sys_latency = get_sys_latency(nphases, cwl)
-        rdphase         = get_sys_phase(nphases, cl_sys_latency, cl)
-        wrphase         = get_sys_phase(nphases, cwl_sys_latency, cwl)
-        read_latency    = cl_sys_latency + 6
-        write_latency   = cwl_sys_latency - 1
-    elif memtype == "DDR4":
-        # Settings from usddrphy
-        tck             = 2/(2*nphases*clk_freq)
-        cl, cwl         = get_default_cl_cwl(memtype, tck)
-        cl_sys_latency  = get_sys_latency(nphases, cl)
-        cwl_sys_latency = get_sys_latency(nphases, cwl)
-        rdphase         = get_sys_phase(nphases, cl_sys_latency, cl)
-        wrphase         = get_sys_phase(nphases, cwl_sys_latency, cwl)
-        read_latency    = cl_sys_latency + 5
-        write_latency   = cwl_sys_latency - 1
-
-    sdram_phy_settings = {
-        "nphases":       nphases,
-        "rdphase":       rdphase,
-        "wrphase":       wrphase,
-        "cl":            cl,
-        "cwl":           cwl,
-        "read_latency":  read_latency,
-        "write_latency": write_latency,
-    }
-
-    return PhySettings(
-        phytype      = "SDRAMPHYModel",
-        memtype      = memtype,
-        databits     = data_width,
-        dfi_databits = data_width if memtype == "SDR" else 2*data_width,
-        **sdram_phy_settings,
-    )
-
 # Simulation SoC -----------------------------------------------------------------------------------
 
 class SimSoC(SoCCore):
+    mem_map = {**SoCCore.mem_map, **{"spiflash": 0x80000000}}
     def __init__(self,
         with_sdram            = False,
         with_ethernet         = False,
+        ethernet_phy_model    = "sim",
         with_etherbone        = False,
         etherbone_mac_address = 0x10e2d5000001,
         etherbone_ip_address  = "192.168.1.51",
@@ -167,6 +138,9 @@ class SimSoC(SoCCore):
         sdram_verbosity       = 0,
         with_i2c              = False,
         with_sdcard           = False,
+        with_spi_flash        = False,
+        spi_flash_init        = [],
+        with_gpio             = False,
         sim_debug             = False,
         trace_reset_on        = False,
         **kwargs):
@@ -183,7 +157,7 @@ class SimSoC(SoCCore):
         self.submodules.crg = CRG(platform.request("sys_clk"))
 
         # SDRAM ------------------------------------------------------------------------------------
-        if with_sdram:
+        if not self.integrated_main_ram_size and with_sdram:
             sdram_clk_freq = int(100e6) # FIXME: use 100MHz timings
             if sdram_spd_data is None:
                 sdram_module_cls = getattr(litedram_modules, sdram_module)
@@ -191,16 +165,12 @@ class SimSoC(SoCCore):
                 sdram_module     = sdram_module_cls(sdram_clk_freq, sdram_rate)
             else:
                 sdram_module = litedram_modules.SDRAMModule.from_spd_data(sdram_spd_data, sdram_clk_freq)
-            phy_settings     = get_sdram_phy_settings(
-                memtype    = sdram_module.memtype,
-                data_width = sdram_data_width,
-                clk_freq   = sdram_clk_freq)
             self.submodules.sdrphy = SDRAMPHYModel(
-                module    = sdram_module,
-                settings  = phy_settings,
-                clk_freq  = sdram_clk_freq,
-                verbosity = sdram_verbosity,
-                init      = sdram_init)
+                module     = sdram_module,
+                data_width = sdram_data_width,
+                clk_freq   = sdram_clk_freq,
+                verbosity  = sdram_verbosity,
+                init       = sdram_init)
             self.add_sdram("sdram",
                 phy                     = self.sdrphy,
                 module                  = sdram_module,
@@ -218,10 +188,20 @@ class SimSoC(SoCCore):
                 self.add_constant("MEMTEST_DATA_SIZE", 8*1024)
                 self.add_constant("MEMTEST_ADDR_SIZE", 8*1024)
 
+        # Ethernet / Etherbone PHY -----------------------------------------------------------------
+        if with_ethernet or with_etherbone:
+            if ethernet_phy_model == "sim":
+                self.submodules.ethphy = LiteEthPHYModel(self.platform.request("eth", 0))
+            elif ethernet_phy_model == "xgmii":
+                self.submodules.ethphy = LiteEthPHYXGMII(None, self.platform.request("xgmii_eth", 0), model=True)
+            elif ethernet_phy_model == "gmii":
+                self.submodules.ethphy = LiteEthPHYGMII(None, self.platform.request("gmii_eth", 0), model=True)
+            else:
+                raise ValueError("Unknown Ethernet PHY model:", ethernet_phy_model)
+
+        # Ethernet and Etherbone -------------------------------------------------------------------
         if with_ethernet and with_etherbone:
             etherbone_ip_address = convert_ip(etherbone_ip_address)
-            # Ethernet PHY
-            self.submodules.ethphy = LiteEthPHYModel(self.platform.request("eth", 0))
             # Ethernet MAC
             self.submodules.ethmac = LiteEthMAC(phy=self.ethphy, dw=8,
                 interface  = "hybrid",
@@ -244,24 +224,20 @@ class SimSoC(SoCCore):
 
         # Ethernet ---------------------------------------------------------------------------------
         elif with_ethernet:
-            # Ethernet PHY
-            self.submodules.ethphy = LiteEthPHYModel(self.platform.request("eth", 0))
             # Ethernet MAC
-            ethmac = LiteEthMAC(phy=self.ethphy, dw=32,
+            self.submodules.ethmac = ethmac = LiteEthMAC(
+                phy        = self.ethphy,
+                dw         = 64 if ethernet_phy_model == "xgmii" else 32,
                 interface  = "wishbone",
                 endianness = self.cpu.endianness)
-            if with_etherbone:
-                ethmac = ClockDomainsRenamer({"eth_tx": "ethphy_eth_tx", "eth_rx":  "ethphy_eth_rx"})(ethmac)
-            self.submodules.ethmac = ethmac
-            self.add_memory_region("ethmac", self.mem_map.get("ethmac", None), 0x2000, type="io")
-            self.add_wb_slave(self.mem_regions["ethmac"].origin, self.ethmac.bus, 0x2000)
+            ethmac_region_size = (ethmac.rx_slots.read() + ethmac.tx_slots.read()) * ethmac.slot_size.read()
+            self.add_memory_region("ethmac", self.mem_map.get("ethmac", None), ethmac_region_size, type="io")
+            self.add_wb_slave(self.mem_regions["ethmac"].origin, ethmac.bus, ethmac_region_size)
             if self.irq.enabled:
                 self.irq.add("ethmac", use_loc_if_exists=True)
 
         # Etherbone --------------------------------------------------------------------------------
         elif with_etherbone:
-            # Ethernet PHY
-            self.submodules.ethphy = LiteEthPHYModel(self.platform.request("eth", 0)) # FIXME
             self.add_etherbone(
                 phy         = self.ethphy,
                 ip_address  = etherbone_ip_address,
@@ -304,6 +280,23 @@ class SimSoC(SoCCore):
         if with_sdcard:
             self.add_sdcard("sdcard", use_emulator=True)
 
+        # SPI Flash --------------------------------------------------------------------------------
+        if with_spi_flash:
+            from litespi.phy.model import LiteSPIPHYModel
+            from litespi.modules import S25FL128L
+            from litespi.opcodes import SpiNorFlashOpCodes as Codes
+            spiflash_module = S25FL128L(Codes.READ_1_1_4)
+            if spi_flash_init is None:
+                platform.add_sources(os.path.abspath(os.path.dirname(__file__)), "../build/sim/verilog/iddr_verilog.v")
+                platform.add_sources(os.path.abspath(os.path.dirname(__file__)), "../build/sim/verilog/oddr_verilog.v")
+            self.submodules.spiflash_phy = LiteSPIPHYModel(spiflash_module, init=spi_flash_init)
+            self.add_spi_flash(phy=self.spiflash_phy, mode="4x", module=spiflash_module, with_master=True)
+
+        # GPIO --------------------------------------------------------------------------------------
+        if with_gpio:
+            self.submodules.gpio = GPIOTristate(platform.request("gpio"), with_irq=True)
+            self.irq.add("gpio", use_loc_if_exists=True)
+
         # Simulation debugging ----------------------------------------------------------------------
         if sim_debug:
             platform.add_debug(self, reset=1 if trace_reset_on else 0)
@@ -321,9 +314,10 @@ def generate_gtkw_savefile(builder, vns, trace_fst):
     with gtkw.GTKWSave(vns, savefile=savefile, dumpfile=dumpfile) as save:
         save.clocks()
         save.fsm_states(soc)
-        save.add(soc.bus.slaves["main_ram"], mappers=[gtkw.wishbone_sorter(), gtkw.wishbone_colorer()])
+        if "main_ram" in soc.bus.slaves.keys():
+            save.add(soc.bus.slaves["main_ram"], mappers=[gtkw.wishbone_sorter(), gtkw.wishbone_colorer()])
 
-        if hasattr(soc, 'sdrphy'):
+        if hasattr(soc, "sdrphy"):
             # all dfi signals
             save.add(soc.sdrphy.dfi, mappers=[gtkw.dfi_sorter(), gtkw.dfi_in_phase_colorer()])
 
@@ -361,12 +355,16 @@ def sim_args(parser):
     parser.add_argument("--sdram-from-spd-dump",  default=None,            help="Generate SDRAM module based on data from SPD EEPROM dump")
     parser.add_argument("--sdram-verbosity",      default=0,               help="Set SDRAM checker verbosity")
     parser.add_argument("--with-ethernet",        action="store_true",     help="Enable Ethernet support")
+    parser.add_argument("--ethernet-phy-model",   default="sim",           help="Ethernet PHY to simulate (sim, xgmii, gmii)")
     parser.add_argument("--with-etherbone",       action="store_true",     help="Enable Etherbone support")
     parser.add_argument("--local-ip",             default="192.168.1.50",  help="Local IP address of SoC (default=192.168.1.50)")
     parser.add_argument("--remote-ip",            default="192.168.1.100", help="Remote IP address of TFTP server (default=192.168.1.100)")
     parser.add_argument("--with-analyzer",        action="store_true",     help="Enable Analyzer support")
     parser.add_argument("--with-i2c",             action="store_true",     help="Enable I2C support")
     parser.add_argument("--with-sdcard",          action="store_true",     help="Enable SDCard support")
+    parser.add_argument("--with-spi-flash",       action="store_true",     help="Enable SPI Flash (MMAPed)")
+    parser.add_argument("--spi_flash-init",       default=None,            help="SPI Flash init file")
+    parser.add_argument("--with-gpio",            action="store_true",     help="Enable Tristate GPIO (32 pins)")
     parser.add_argument("--trace",                action="store_true",     help="Enable Tracing")
     parser.add_argument("--trace-fst",            action="store_true",     help="Enable FST tracing (default=VCD)")
     parser.add_argument("--trace-start",          default="0",             help="Time to start tracing (ps)")
@@ -374,6 +372,7 @@ def sim_args(parser):
     parser.add_argument("--opt-level",            default="O3",            help="Compilation optimization level")
     parser.add_argument("--sim-debug",            action="store_true",     help="Add simulation debugging modules")
     parser.add_argument("--gtkwave-savefile",     action="store_true",     help="Generate GTKWave savefile")
+    parser.add_argument("--non-interactive",      action="store_true",     help="Run simulation without user input")
 
 def main():
     parser = argparse.ArgumentParser(description="Generic LiteX SoC Simulation")
@@ -390,27 +389,41 @@ def main():
     # Configuration --------------------------------------------------------------------------------
 
     cpu = CPUS.get(soc_kwargs.get("cpu_type", "vexriscv"))
+
+    # UART.
     if soc_kwargs["uart_name"] == "serial":
         soc_kwargs["uart_name"] = "sim"
         sim_config.add_module("serial2console", "serial")
+
+    # ROM.
     if args.rom_init:
         soc_kwargs["integrated_rom_init"] = get_mem_data(args.rom_init, cpu.endianness)
-    if not args.with_sdram:
-        soc_kwargs["integrated_main_ram_size"] = 0x10000000 # 256 MB
+
+    # RAM / SDRAM.
+    soc_kwargs["integrated_main_ram_size"] = args.integrated_main_ram_size
+    if args.integrated_main_ram_size:
         if args.ram_init is not None:
             soc_kwargs["integrated_main_ram_init"] = get_mem_data(args.ram_init, cpu.endianness)
-    else:
+    elif args.with_sdram:
         assert args.ram_init is None
-        soc_kwargs["integrated_main_ram_size"] = 0x0
-        soc_kwargs["sdram_module"]             = args.sdram_module
-        soc_kwargs["sdram_data_width"]         = int(args.sdram_data_width)
-        soc_kwargs["sdram_verbosity"]          = int(args.sdram_verbosity)
+        soc_kwargs["sdram_module"]     = args.sdram_module
+        soc_kwargs["sdram_data_width"] = int(args.sdram_data_width)
+        soc_kwargs["sdram_verbosity"]  = int(args.sdram_verbosity)
         if args.sdram_from_spd_dump:
             soc_kwargs["sdram_spd_data"] = parse_spd_hexdump(args.sdram_from_spd_dump)
 
+    # Ethernet.
     if args.with_ethernet or args.with_etherbone:
-        sim_config.add_module("ethernet", "eth", args={"interface": "tap0", "ip": args.remote_ip})
+        if args.ethernet_phy_model == "sim":
+            sim_config.add_module("ethernet", "eth", args={"interface": "tap0", "ip": args.remote_ip})
+        elif args.ethernet_phy_model == "xgmii":
+            sim_config.add_module("xgmii_ethernet", "xgmii_eth", args={"interface": "tap0", "ip": args.remote_ip})
+        elif args.ethernet_phy_model == "gmii":
+            sim_config.add_module("gmii_ethernet", "gmii_eth", args={"interface": "tap0", "ip": args.remote_ip})
+        else:
+            raise ValueError("Unknown Ethernet PHY model: " + args.ethernet_phy_model)
 
+    # I2C.
     if args.with_i2c:
         sim_config.add_module("spdeeprom", "i2c")
 
@@ -419,15 +432,19 @@ def main():
 
     # SoC ------------------------------------------------------------------------------------------
     soc = SimSoC(
-        with_sdram     = args.with_sdram,
-        with_ethernet  = args.with_ethernet,
-        with_etherbone = args.with_etherbone,
-        with_analyzer  = args.with_analyzer,
-        with_i2c       = args.with_i2c,
-        with_sdcard    = args.with_sdcard,
-        sim_debug      = args.sim_debug,
-        trace_reset_on = trace_start > 0 or trace_end > 0,
-        sdram_init     = [] if args.sdram_init is None else get_mem_data(args.sdram_init, cpu.endianness),
+        with_sdram         = args.with_sdram,
+        with_ethernet      = args.with_ethernet,
+        ethernet_phy_model = args.ethernet_phy_model,
+        with_etherbone     = args.with_etherbone,
+        with_analyzer      = args.with_analyzer,
+        with_i2c           = args.with_i2c,
+        with_sdcard        = args.with_sdcard,
+        with_spi_flash     = args.with_spi_flash,
+        with_gpio          = args.with_gpio,
+        sim_debug          = args.sim_debug,
+        trace_reset_on     = trace_start > 0 or trace_end > 0,
+        sdram_init         = [] if args.sdram_init is None else get_mem_data(args.sdram_init, cpu.endianness),
+        spi_flash_init     = None if args.spi_flash_init is None else get_mem_data(args.spi_flash_init, "big"),
         **soc_kwargs)
     if args.ram_init is not None or args.sdram_init is not None:
         soc.add_constant("ROM_BOOT_ADDRESS", soc.mem_map["main_ram"])
@@ -438,26 +455,23 @@ def main():
             soc.add_constant("REMOTEIP{}".format(i+1), int(args.remote_ip.split(".")[i]))
 
     # Build/Run ------------------------------------------------------------------------------------
+    def pre_run_callback(vns):
+        if args.trace:
+            generate_gtkw_savefile(builder, vns, args.trace_fst)
+
     builder_kwargs["csr_csv"] = "csr.csv"
     builder = Builder(soc, **builder_kwargs)
-    for i in range(2):
-        build = (i == 0)
-        run   = (i == 1)
-        vns = builder.build(
-            build       = build,
-            run         = run,
-            threads     = args.threads,
-            sim_config  = sim_config,
-            opt_level   = args.opt_level,
-            trace       = args.trace,
-            trace_fst   = args.trace_fst,
-            trace_start = trace_start,
-            trace_end   = trace_end
-        )
-        if args.with_analyzer:
-            soc.analyzer.export_csv(vns, "analyzer.csv")
-        if args.gtkwave_savefile:
-            generate_gtkw_savefile(builder, vns, args.trace_fst)
+    builder.build(
+        threads          = args.threads,
+        sim_config       = sim_config,
+        opt_level        = args.opt_level,
+        trace            = args.trace,
+        trace_fst        = args.trace_fst,
+        trace_start      = trace_start,
+        trace_end        = trace_end,
+        interactive      = not args.non_interactive,
+        pre_run_callback = pre_run_callback
+    )
 
 if __name__ == "__main__":
     main()

@@ -155,12 +155,12 @@ def _compile_sim(build_name, verbose):
     if verbose:
         print(output)
 
-def _run_sim(build_name, as_root=False):
+def _run_sim(build_name, as_root=False, interactive=True):
     run_script_contents = "sudo " if as_root else ""
     run_script_contents += "obj_dir/Vsim"
     run_script_file = "run_" + build_name + ".sh"
     tools.write_to_file(run_script_file, run_script_contents, force_unix=True)
-    if sys.platform != "win32":
+    if sys.platform != "win32" and interactive:
         import termios
         termios_settings = termios.tcgetattr(sys.stdin.fileno())
     try:
@@ -169,27 +169,29 @@ def _run_sim(build_name, as_root=False):
             raise OSError("Subprocess failed")
     except:
         pass
-    if sys.platform != "win32":
+    if sys.platform != "win32" and interactive:
         termios.tcsetattr(sys.stdin.fileno(), termios.TCSAFLUSH, termios_settings)
 
 
 class SimVerilatorToolchain:
     def build(self, platform, fragment,
-            build_dir    = "build",
-            build_name   = "sim",
-            serial       = "console",
-            build        = True,
-            run          = True,
-            threads      = 1,
-            verbose      = True,
-            sim_config   = None,
-            coverage     = False,
-            opt_level    = "O0",
-            trace        = False,
-            trace_fst    = False,
-            trace_start  = 0,
-            trace_end    = -1,
-            regular_comb = False):
+            build_dir        = "build",
+            build_name       = "sim",
+            serial           = "console",
+            build            = True,
+            run              = True,
+            threads          = 1,
+            verbose          = True,
+            sim_config       = None,
+            coverage         = False,
+            opt_level        = "O0",
+            trace            = False,
+            trace_fst        = False,
+            trace_start      = 0,
+            trace_end        = -1,
+            regular_comb     = False,
+            interactive      = True,
+            pre_run_callback = None):
 
         # Create build directory
         os.makedirs(build_dir, exist_ok=True)
@@ -227,6 +229,8 @@ class SimVerilatorToolchain:
 
         # Run
         if run:
+            if pre_run_callback is not None:
+                pre_run_callback(v_output.ns)
             if which("verilator") is None:
                 msg = "Unable to find Verilator toolchain, please either:\n"
                 msg += "- Install Verilator.\n"
@@ -234,11 +238,11 @@ class SimVerilatorToolchain:
                 raise OSError(msg)
             _compile_sim(build_name, verbose)
             run_as_root = False
-            if sim_config.has_module("ethernet"):
+            if sim_config.has_module("ethernet") \
+               or sim_config.has_module("xgmii_ethernet") \
+               or sim_config.has_module("gmii_ethernet"):
                 run_as_root = True
-            if sim_config.has_module("xgmii_ethernet"):
-                run_as_root = True
-            _run_sim(build_name, as_root=run_as_root)
+            _run_sim(build_name, as_root=run_as_root, interactive=interactive)
 
         os.chdir(cwd)
 

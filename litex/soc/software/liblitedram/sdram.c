@@ -6,6 +6,7 @@
 // This file is Copyright (c) 2018 Jean-François Nguyen <jf@lambdaconcept.fr>
 // This file is Copyright (c) 2018 Sergiusz Bazanski <q3k@q3k.org>
 // This file is Copyright (c) 2018 Tim 'mithro' Ansell <me@mith.ro>
+// This file is Copyright (c) 2021 Antmicro <www.antmicro.com>
 // License: BSD
 
 #include <generated/csr.h>
@@ -13,8 +14,9 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <memtest.h>
-#include <lfsr.h>
+
+#include <libbase/memtest.h>
+#include <libbase/lfsr.h>
 
 #ifdef CSR_SDRAM_BASE
 #include <generated/sdram_phy.h>
@@ -57,7 +59,7 @@ __attribute__((unused)) void cdelay(int i)
 #define MEMTEST_DATA_SIZE (2*1024*1024)
 #endif
 
-#define DFII_PIX_DATA_BYTES DFII_PIX_DATA_SIZE*CONFIG_CSR_DATA_WIDTH/8
+#define DFII_PIX_DATA_BYTES SDRAM_PHY_DFI_DATABITS/8
 
 int sdram_get_databits(void) {
 	return SDRAM_PHY_DATABITS;
@@ -299,7 +301,7 @@ static void print_scan_errors(unsigned int errors) {
 #endif
 }
 
-#define READ_CHECK_TEST_PATTERN_MAX_ERRORS (SDRAM_PHY_PHASES*2*32)
+#define READ_CHECK_TEST_PATTERN_MAX_ERRORS (8*SDRAM_PHY_PHASES*DFII_PIX_DATA_BYTES/SDRAM_PHY_MODULES)
 
 static unsigned int sdram_write_read_check_test_pattern(int module, unsigned int seed) {
 	int p, i;
@@ -346,8 +348,12 @@ static unsigned int sdram_write_read_check_test_pattern(int module, unsigned int
 		/* Read back test pattern */
 		csr_rd_buf_uint8(sdram_dfii_pix_rddata_addr(p), tst, DFII_PIX_DATA_BYTES);
 		/* Verify bytes matching current 'module' */
-		errors += popcount(prs[p][	SDRAM_PHY_MODULES-1-module] ^ tst[	SDRAM_PHY_MODULES-1-module]);
-		errors += popcount(prs[p][2*SDRAM_PHY_MODULES-1-module] ^ tst[2*SDRAM_PHY_MODULES-1-module]);
+		for (int i = 0; i < DFII_PIX_DATA_BYTES; ++i) {
+			int j = p * DFII_PIX_DATA_BYTES + i;
+			if (j % SDRAM_PHY_MODULES == SDRAM_PHY_MODULES-1-module) {
+				errors += popcount(prs[p][i] ^ tst[i]);
+			}
+		}
 	}
 
 #ifdef SDRAM_PHY_ECP5DDRPHY
@@ -674,8 +680,13 @@ static int sdram_write_leveling_scan(int *delays, int loops, int show)
 				sdram_write_leveling_inc_delay(i);
 				cdelay(100);
 			}
-		/* Succeed only if the start of a 1s window has been found */
-		} else if (one_window_best_count > 0 && one_window_best_start > 0) {
+		/* Succeed only if the start of a 1s window has been found: */
+		} else if (
+			/* Start of 1s window directly seen after 0. */
+			((one_window_best_start) > 0 && (one_window_best_count > 0)) ||
+			/* Start of 1s window indirectly seen before 0. */
+			((one_window_best_start == 0) && (one_window_best_count > _sdram_tck_taps/4))
+			){
 #if SDRAM_PHY_DELAYS > 32
 			/* Ensure write delay is just before transition */
 			one_window_start -= min(one_window_start, 16);
@@ -1249,7 +1260,7 @@ int sdram_init(void)
 #endif
 		return 0;
 	}
-	memspeed((unsigned int *) MAIN_RAM_BASE, MEMTEST_DATA_SIZE, false);
+	memspeed((unsigned int *) MAIN_RAM_BASE, MEMTEST_DATA_SIZE, false, 0);
 #endif
 #ifdef CSR_DDRCTRL_BASE
 	ddrctrl_init_done_write(1);

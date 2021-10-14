@@ -22,7 +22,7 @@ class LatticeProgrammer(GenericProgrammer):
         xcf_file = bitstream_file.replace(".bit", ".xcf")
         xcf_content = self.xcf_template.format(bitstream_file=bitstream_file)
         tools.write_to_file(xcf_file, xcf_content)
-        self.call(["pgrcmd", "-infile", xcf_file])
+        self.call(["pgrcmd", "-infile", xcf_file], check=False)
 
 # OpenOCDJTAGProgrammer --------------------------------------------------------------------------------
 
@@ -185,3 +185,18 @@ class EcpDapProgrammer(GenericProgrammer):
             "--freq", str(self.frequency_khz),
             bitstream_file
         ])
+
+# EcpprogProgrammer -------------------------------------------------------------------------------
+
+class EcpprogProgrammer(GenericProgrammer):
+    """ecpprog allows you to program ECP5 FPGAs and attached SPI flash using FTDI based JTAG probes
+
+    You can get `ecpprog` here: https://github.com/gregdavill/ecpprog
+    """
+    needs_bitreverse = False
+
+    def flash(self, address, bitstream_file):
+        self.call(["ecpprog", "-o", str(address), bitstream_file])
+
+    def load_bitstream(self, bitstream_file):
+        self.call(["ecpprog", "-S", bitstream_file])

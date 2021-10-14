@@ -5,12 +5,47 @@
 # SPDX-License-Identifier: BSD-2-Clause
 
 from migen import *
+from migen.genlib.resetsync import AsyncResetSynchronizer
 
 from litex.soc.cores.clock.common import *
 
 class Open(Signal): pass
 
-# GoWin / GW1N -------------------------------------------------------------------------------------
+# GoWin / GW1NOSC ----------------------------------------------------------------------------------
+
+class GW1NOSC(Module):
+    osc_div_range = (2,  128)
+    def __init__(self, device, freq, margin=1e-2):
+        self.logger = logging.getLogger("GW1NOSC")
+        self.logger.info("Creating GW1NOSC.".format())
+        self.clk    = Signal()
+
+        # # #
+
+        # Oscillator frequency.
+        osc_freq   = 250e6
+        if device in ["GW1N-4", "GW1NR-4", "GW1N-4B", "GW1NR-4B", "GW1NRF-4B", "GW1N-4C", "GW1NR-4C"]:
+            osc_freq = 210e6
+
+        # Oscillator divider.
+        osc_div = None
+        osc_div_min, osc_div_max = self.osc_div_range
+        for div in range(osc_div_min, osc_div_max):
+            clk_freq = osc_freq/div
+            if (clk_freq >= freq*(1 - margin) and clk_freq <= freq*(1 + margin)):
+                osc_div = div
+        if osc_div is None:
+            raise ValueError("No OSC config found")
+        self.logger.info(f"Configured to {(osc_freq/osc_div)/1e6:3.2f}MHz (div={osc_div}).")
+
+        # Oscillator instance.
+        self.specials += Instance("OSC",
+            p_DEVICE   = device,
+            p_FREQ_DIV = osc_div,
+            o_OSCOUT   = self.clk
+        )
+
+# GoWin / GW1NPLL ----------------------------------------------------------------------------------
 
 class GW1NPLL(Module):
     nclkouts_max   = 1
@@ -39,12 +74,13 @@ class GW1NPLL(Module):
         self.clkin_freq = freq
         register_clkin_log(self.logger, clkin, freq)
 
-    def create_clkout(self, cd, freq, phase=0, margin=1e-2, with_reset=False):
+    def create_clkout(self, cd, freq, phase=0, margin=1e-2, with_reset=True):
         assert self.nclkouts < self.nclkouts_max
         clkout = Signal()
         self.clkouts[self.nclkouts] = (clkout, freq, phase, margin)
         if with_reset:
-            raise NotImplementedError
+            # FIXME: Should use PLL's lock but does not seem stable.
+            self.specials += AsyncResetSynchronizer(cd, self.reset)
         self.comb += cd.clk.eq(clkout)
         create_clkout_log(self.logger, cd.name, freq, margin, self.nclkouts)
         self.nclkouts += 1

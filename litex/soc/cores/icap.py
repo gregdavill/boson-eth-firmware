@@ -1,94 +1,248 @@
 #
 # This file is part of LiteX.
 #
-# Copyright (c) 2019-2020 Florent Kermarrec <florent@enjoy-digital.fr>
+# Copyright (c) 2019-2021 Florent Kermarrec <florent@enjoy-digital.fr>
 # SPDX-License-Identifier: BSD-2-Clause
+
+from enum import IntEnum
 
 from migen import *
 
-from migen.genlib.misc import timeline
 from migen.genlib.cdc import PulseSynchronizer
 
 from litex.soc.interconnect.csr import *
 from litex.soc.interconnect import stream
+
+# Constants ----------------------------------------------------------------------------------------
+
+# ICAP Words
+
+ICAP_DUMMY = 0xffffffff
+ICAP_SYNC  = 0xaa995566
+ICAP_NOOP  = 0x20000000
+ICAP_WRITE = 0x30000000
+ICAP_READ  = 0x28000000
+
+# Configuration Registers (from UG470).
+
+class ICAPRegisters(IntEnum):
+    CRC     = 0b00000 # CRC Register.
+    FAR     = 0b00001 # Frame Address Register.
+    FDRI    = 0b00010 # Frame Data Register, Input Register.
+    FDRO    = 0b00011 # Frame Data Register, Output Register.
+    CMD     = 0b00100 # Command Register.
+    CTL0    = 0b00101 # Control Register 0.
+    MASK    = 0b00110 # Masking Register for CTL0 and CTL1.
+    STAT    = 0b00111 # Status Register.
+    LOUT    = 0b01000 # Legacy Output Register for daisy chain.
+    COR0    = 0b01001 # Configuration Option Register 0.
+    MFWR    = 0b01010 # Multiple Frame Write Register.
+    CBC     = 0b01011 # Initial CBC Value Register.
+    IDCODE  = 0b01100 # Device ID Register.
+    AXSS    = 0b01101 # User Access Register.
+    COR1    = 0b01110 # Configuration Option Register 1.
+    WBSTAR  = 0b10000 # Warm Boot Start Address Register.
+    TIMER   = 0b10001 # Watchdog Timer Register.
+    BOOTSTS = 0b10110 # Boot History Status Register.
+    CTL1    = 0b11000 # Control Register 1.
+    BSPI    = 0b11111 # BPI/SPI Configuration Options Register.
+
+# Commands (from UG470).
+
+class ICAPCMDs(IntEnum):
+    MFW       = 0b00010 # Multiple Frame Write.
+    LFRM      = 0b00011 # Last Frame.
+    RCFG      = 0b00100 # Reads Configuration Data.
+    START     = 0b00101 # Begins the Startup Sequence.
+    RCAP      = 0b00110 # Resets the CAPTURE signal.
+    RCRC      = 0b00111 # Resets CRC.
+    AGHIGH    = 0b01000 # Asserts the GHIGH_B signal.
+    SWITCH    = 0b01001 # Switches the CCLK frequency.
+    GRESTORE  = 0b01010 # Pulses the GRESTORE signal.
+    SHUTDOWN  = 0b01011 # Begin Shutdown Sequence.
+    GCAPTURE  = 0b01100 # Pulses GCAPTURE.
+    DESYNC    = 0b01101 # Resets the DALIGN signal.
+    IPROG     = 0b01111 # Internal PROG for triggering a warm boot.
+    CRCC      = 0b10000 # Recalculates the first readback CRC value after reconfiguration
+    LTIMER    = 0b10001 # Reload Watchdog timer.
+    BSPI_READ = 0b10010 # BPI/SPI re-initiate bitstream read.
+    FALL_EDGE = 0b10011 # Switch to negative-edge clocking.
 
 # Xilinx 7-series ----------------------------------------------------------------------------------
 
 class ICAP(Module, AutoCSR):
     """ICAP
 
-    Allow sending commands to ICAPE2 of Xilinx 7-Series FPGAs, the bistream can for example be
-    reloaded from SPI Flash by writing 0x00000000 at address @0x4.
+    Allow writing/reading ICAPE2's registers of Xilinx 7-Series FPGAs.
+
+    A warm boot can for example be triggered by writing IPROG CMD (0xf) to CMD register (0b100).
     """
     def __init__(self, with_csr=True, simulation=False):
-        self.addr = Signal(5)
-        self.data = Signal(32)
-        self.send = Signal()
-        self.done = Signal()
+        self.write      = Signal()
+        self.read       = Signal()
+        self.done       = Signal()
+        self.addr       = Signal(5)
+        self.write_data = Signal(32)
+        self.read_data  = Signal(32)
 
         # # #
 
-        # Create slow icap clk (sys_clk/16) ---------------------------------------------------------
+        # Create slow ICAP Clk (sys_clk/16).
         self.clock_domains.cd_icap = ClockDomain()
         icap_clk_counter = Signal(4)
         self.sync += icap_clk_counter.eq(icap_clk_counter + 1)
         self.sync += self.cd_icap.clk.eq(icap_clk_counter[3])
 
-        # Resynchronize send pulse to icap domain ---------------------------------------------------
-        ps_send = PulseSynchronizer("sys", "icap")
-        self.submodules += ps_send
-        self.comb += ps_send.i.eq(self.send)
+        # Generate ICAP bitstream sequence.
+        self._csib  = _csib  = Signal(reset=1)
+        self._rdwrb = _rdwrb = Signal()
+        self._i     = _i     = Signal(32)
+        self._o     = _o     = Signal(32)
 
-        # Generate icap bitstream write sequence
-        self._csib = _csib = Signal(reset=1)
-        self._i    = _i =  Signal(32)
-        _addr      = self.addr << 13
-        _data      = self.data
-        self.sync.icap += [
-            _i.eq(0xffffffff), # dummy
-            timeline(ps_send.o, [
-                (1,  [_csib.eq(1), self.done.eq(0)]),
-                (2,  [_csib.eq(0), _i.eq(0x20000000)]),         # noop
-                (3,  [_csib.eq(0), _i.eq(0xaa995566)]),         # sync word
-                (4,  [_csib.eq(0), _i.eq(0x20000000)]),         # noop
-                (5,  [_csib.eq(0), _i.eq(0x20000000)]),         # noop
-                (6,  [_csib.eq(0), _i.eq(0x30000001 | _addr)]), # write command
-                (7,  [_csib.eq(0), _i.eq(_data)]),              # write value
-                (8,  [_csib.eq(0), _i.eq(0x20000000)]),         # noop
-                (9,  [_csib.eq(0), _i.eq(0x20000000)]),         # noop
-                (10, [_csib.eq(0), _i.eq(0x30008001)]),         # write to cmd register
-                (11, [_csib.eq(0), _i.eq(0x0000000d)]),         # desync command
-                (12, [_csib.eq(0), _i.eq(0x20000000)]),         # noop
-                (13, [_csib.eq(0), _i.eq(0x20000000)]),         # noop
-                (14, [_csib.eq(1), self.done.eq(1)]),
-            ])
-        ]
+        count = Signal(4)
+        fsm   = FSM(reset_state="WAIT")
+        fsm   = ClockDomainsRenamer("icap")(fsm)
+        fsm   = ResetInserter()(fsm)
+        self.submodules += fsm
+        self.comb += fsm.reset.eq(~(self.write | self.read))
 
-        # ICAP instance
+        # Wait User Command.
+        fsm.act("WAIT",
+            # Set ICAP in IDLE state.
+            _csib.eq(1),
+            _rdwrb.eq(0),
+            _i.eq(ICAP_DUMMY),
+
+            # Wait User Command.
+            If(self.write | self.read,
+                NextValue(count, 0),
+                NextState("SYNC")
+            )
+        )
+
+        # Send ICAP Synchronization sequence.
+        fsm.act("SYNC",
+            _csib.eq(0),
+            _rdwrb.eq(0),
+            Case(count, {
+                0 : _i.eq(ICAP_NOOP), # No Op.
+                1 : _i.eq(ICAP_SYNC), # Sync Word.
+                2 : _i.eq(ICAP_NOOP), # No Op.
+                3 : _i.eq(ICAP_NOOP), # No Op.
+            }),
+            NextValue(count, count + 1),
+            If(count == (4-1),
+                NextValue(count, 0),
+                If(self.write,
+                    NextState("WRITE")
+                ).Else(
+                    NextState("READ")
+                )
+            )
+        )
+
+        # Send ICAP Write sequence.
+        fsm.act("WRITE",
+            _csib.eq(0),
+            _rdwrb.eq(0),
+            Case(count, {
+                0 : _i.eq(ICAP_WRITE | (self.addr  << 13) | 1), # Set Register.
+                1 : _i.eq(self.write_data),                     # Set Register Data.
+                2 : _i.eq(ICAP_NOOP),                           # No Op.
+                3 : _i.eq(ICAP_NOOP),                           # No Op.
+            }),
+            NextValue(count, count + 1),
+            If(count == (4-1),
+                NextValue(count, 0),
+                NextState("DESYNC")
+            )
+        )
+
+        # Send ICAP Read sequence.
+        fsm.act("READ",
+            _csib.eq(0),
+            _rdwrb.eq(0),
+            Case(count, {
+                0 : _i.eq(ICAP_READ | (self.addr  << 13) | 1),     # Set Register.
+                1 : _i.eq(ICAP_NOOP),                              # No Op.
+                2 : _i.eq(ICAP_NOOP),                              # No Op.
+                3 : [_csib.eq(1), _rdwrb.eq(1), _i.eq(ICAP_NOOP)], # Idle + No Op.
+                4 : [_csib.eq(0), _rdwrb.eq(1), _i.eq(ICAP_NOOP)], # No Op.
+                5 : [_csib.eq(0), _rdwrb.eq(1), _i.eq(ICAP_NOOP)], # No Op.
+                6 : [_csib.eq(0), _rdwrb.eq(1), _i.eq(ICAP_NOOP)], # No Op.
+                7 : [_csib.eq(0), _rdwrb.eq(1), _i.eq(ICAP_NOOP)], # No Op.
+                8 : [_csib.eq(0), _rdwrb.eq(1), _i.eq(ICAP_NOOP)], # No Op.
+            }),
+            NextValue(count, count + 1),
+            If(count == (8-1),
+                NextValue(self.read_data, _o),
+                NextValue(count, 0),
+                NextState("DESYNC")
+            )
+        )
+
+        # Send ICAP Desynchronization sequence.
+        fsm.act("DESYNC",
+            _csib.eq(0),
+            _rdwrb.eq(0),
+            Case(count, {
+                0 : _i.eq(ICAP_WRITE | (ICAPRegisters.CMD << 13) | 1), # Write to CMD Register.
+                1 : _i.eq(ICAPCMDs.DESYNC),                            # DESYNC CMD.
+                2 : _i.eq(ICAP_NOOP),                                  # No Op.
+                3 : _i.eq(ICAP_NOOP),                                  # No Op.
+            }),
+            NextValue(count, count + 1),
+            If(count == (4-1),
+                NextValue(count, 0),
+                NextState("DONE")
+            )
+        )
+
+        # Done
+        fsm.act("DONE",
+            # Set ICAP in IDLE state.
+            _csib.eq(1),
+            _rdwrb.eq(0),
+            _i.eq(ICAP_DUMMY),
+            self.done.eq(1)
+        )
+
+        # ICAP Instance.
         if not simulation:
+            _i_icape2 = Signal(32)
+            _o_icape2 = Signal(32)
+            self.comb += _i_icape2.eq(Cat(*[_i[8*i:8*(i+1)][::-1] for i in range(4)])),
+            self.comb += _o.eq(Cat(*[_o_icape2[8*i:8*(i+1)][::-1] for i in range(4)])),
             self.specials += Instance("ICAPE2",
                 p_ICAP_WIDTH = "X32",
                 i_CLK   = ClockSignal("icap"),
                 i_CSIB  = _csib,
-                i_RDWRB = 0,
-                i_I     = Cat(*[_i[8*i:8*(i+1)][::-1] for i in range(4)]),
+                i_RDWRB = _rdwrb,
+                i_I     = _i_icape2,
+                o_O     = _o_icape2,
             )
 
-        # CSR
+        # CSR.
         if with_csr:
             self.add_csr()
 
     def add_csr(self):
-        self._addr = CSRStorage(5,  reset_less=True, description="ICAP Write Address.")
-        self._data = CSRStorage(32, reset_less=True, description="ICAP Write Data.")
-        self._send = CSRStorage(description="ICAP Control.\n\n Write ``1`` send a write command to the ICAP.")
-        self._done = CSRStatus(reset=1, description="ICAP Status.\n\n Write command done when read as ``1``.")
+        self._addr  = CSRStorage(5,  reset_less=True, description="ICAP Address.")
+        self._data  = CSRStorage(32, reset_less=True, description="ICAP Write/Read Data.", write_from_dev=True)
+        self._write = CSRStorage(description="ICAP Control.\n\n Write ``1`` send a write to the ICAP.")
+        self._done  = CSRStatus(reset=1, description="ICAP Status.\n\n Write command done when read as ``1``.")
+        self._read  = CSRStorage(description="ICAP Control.\n\n Read ``1`` send a read from the ICAP.")
 
         self.comb += [
             self.addr.eq(self._addr.storage),
-            self.data.eq(self._data.storage),
-            self.send.eq(self._send.re),
-            self._done.status.eq(self.done)
+            self.write_data.eq(self._data.storage),
+            self.write.eq(self._write.storage),
+            self._done.status.eq(self.done),
+            self.read.eq(self._read.storage),
+            If(self.done,
+                self._data.we.eq(1),
+                self._data.dat_w.eq(self.read_data)
+            )
         ]
 
     def add_reload(self):
@@ -101,9 +255,9 @@ class ICAP(Module, AutoCSR):
             )
         )
         fsm.act("RELOAD",
-            self.addr.eq(0x4),
-            self.data.eq(0xf),
-            self.send.eq(1),
+            self.addr.eq(ICAPRegisters.CMD),
+            self.write.eq(1),
+            self.write_data.eq(ICAPCMDs.IPROG),
         )
 
     def add_timing_constraints(self, platform, sys_clk_freq, sys_clk):

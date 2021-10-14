@@ -173,8 +173,40 @@ int main(int, char**)
 
         {
             ImGui::Begin("Camera 1");                          // Create a window called "Hello, world!" and append into it.
+            
+            static ImVec2 center = ImVec2(320, 256);
+            ImGui::SliderFloat2("Position", &center[0], 0,640);
+            
             ImGui::Text("%.3f ms/frame (%.1f FPS)", img->delta * 1000.0f, 1.0f / img->delta);
+            ImVec2 pos = ImGui::GetCursorScreenPos();
+            
+
+            int w = 8;
+            ImVec2 tl = ImVec2(center.x + pos.x - w/2, center.y + pos.y -w/2);
+            ImVec2 br = ImVec2(center.x + pos.x + w/2, center.y + pos.y +w/2);
+            
+        
             ImGui::Image((ImTextureID)img->tex0, ImVec2(640, 512));
+
+            
+
+            ImDrawList* draw_list = ImGui::GetWindowDrawList();
+            draw_list->AddRect(tl, br, IM_COL32(0, 255, 255, 255));
+
+            tl.x -= 5;
+            tl.y -= 5;
+            ImGui::SetCursorPos(tl);
+
+            int offset = (640*2 * (int)center.y) + (int)center.x*2;
+            uint16_t data = img->data[offset] + (img->data[offset + 1] << 8);
+
+
+            tl = ImVec2(center.x +pos.x + 3, center.y +pos.y + 3);
+            br = ImVec2(center.x +pos.x + 48, center.y+ pos.y + 19);
+            draw_list->AddRectFilled(tl, br, IM_COL32(0, 0, 0, 200));
+            
+            ImGui::Text("%05d", data);
+                
 
             ImGui::End();
         }

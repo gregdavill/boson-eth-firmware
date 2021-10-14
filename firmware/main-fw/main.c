@@ -111,13 +111,10 @@ int main(int i, char **c)
 
 		if(telnet_active)
 		{
-		//	capture_service();
-		//	transmit_service();
+			capture_service();
+			transmit_service();
 			hb_service();
 		}
-
-		udp_service();
-
 	}
 	
 	return 0;

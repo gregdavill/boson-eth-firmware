@@ -21,6 +21,7 @@ jobs:
       
 
       - name: patches
+        working-directory: ./gateware/deps
         run: |
           git apply --verbose --directory=gateware/deps/liteeth 001-liteeth.patch
 

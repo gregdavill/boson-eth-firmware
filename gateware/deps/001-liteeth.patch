@@ -1,0 +1,13 @@
+diff --git a/liteeth/mac/__init__.py b/liteeth/mac/__init__.py
+index 86da1bb..62e7685 100644
+--- a/liteeth/mac/__init__.py
++++ b/liteeth/mac/__init__.py
+@@ -69,7 +69,7 @@ class LiteEthMAC(Module, AutoCSR):
+             self.ev, self.bus = self.interface.sram.ev, self.interface.bus
+             self.csrs = self.interface.get_csrs() + self.core.get_csrs()
+             if interface == "hybrid":
+-                assert dw == 8
++                # assert dw == 8
+                 # Hardware MAC
+                 self.submodules.crossbar     = LiteEthMACCrossbar(dw)
+                 self.submodules.mac_crossbar = LiteEthMACCoreCrossbar(self.core, self.crossbar, self.interface, dw, hw_mac)
